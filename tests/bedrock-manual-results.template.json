@@ -2,6 +2,7 @@
   "tester": "",
   "minecraftVersion": "",
   "worldName": "",
+  "executionDate": "",
   "notes": "",
   "scenarios": [
     { "id": "S01", "name": "Pack load and world entry", "status": "PENDING", "notes": "" },
@@ -14,6 +15,7 @@
     { "id": "S08", "name": "Player death cleanup", "status": "PENDING", "notes": "" },
     { "id": "S09", "name": "Leave/rejoin cleanup", "status": "PENDING", "notes": "" },
     { "id": "S10", "name": "Dimension transfer while morphed", "status": "PENDING", "notes": "" },
-    { "id": "S11", "name": "Repeatability stress (10 cycles)", "status": "PENDING", "notes": "" }
+    { "id": "S11", "name": "Repeatability stress (10 cycles)", "status": "PENDING", "notes": "" },
+    { "id": "S12", "name": "Held item visibility while morphed", "status": "PENDING", "notes": "" }
   ]
 }

@@ -33,6 +33,11 @@ function Read-JsonIfExists {
   return (Get-Content -Raw -Path $Path | ConvertFrom-Json)
 }
 
+function IsBlank {
+  param([string]$Value)
+  return [string]::IsNullOrWhiteSpace($Value)
+}
+
 $blockers = @()
 $warnings = @()
 
@@ -53,13 +58,23 @@ if ($null -eq $runtime) {
 }
 
 $requiredScenarioIds = @(
-  "S01","S02","S03","S04","S05","S06","S07","S08","S09","S10","S11"
+  "S01","S02","S03","S04","S05","S06","S07","S08","S09","S10","S11","S12"
 )
 
 $manual = Read-JsonIfExists -Path $ManualResultsPath
 if ($null -eq $manual) {
   $blockers += "Missing manual results file: $ManualResultsPath"
 } else {
+  if (IsBlank -Value ([string]$manual.tester)) {
+    $blockers += "[manual] tester is required in manual results."
+  }
+  if (IsBlank -Value ([string]$manual.minecraftVersion)) {
+    $blockers += "[manual] minecraftVersion is required in manual results."
+  }
+  if (IsBlank -Value ([string]$manual.worldName)) {
+    $blockers += "[manual] worldName is required in manual results."
+  }
+
   $scenarioById = @{}
   foreach ($scenario in @($manual.scenarios)) {
     if ($scenario.id) {
@@ -78,6 +93,13 @@ if ($null -eq $manual) {
       $name = [string]$scenarioById[$id].name
       $notes = [string]$scenarioById[$id].notes
       $blockers += "[manual] $id ($name) is $status. Notes: $notes"
+    }
+
+    if ($status -eq "PASS" -and $id -in @("S10", "S11", "S12")) {
+      $notes = [string]$scenarioById[$id].notes
+      if (IsBlank -Value $notes) {
+        $blockers += "[manual] $id requires notes when PASS (document observations/evidence)."
+      }
     }
   }
 }

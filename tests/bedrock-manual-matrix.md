@@ -6,6 +6,7 @@ Use this matrix with `scripts/test/run-all.ps1`.
 
 - Minecraft Bedrock Stable 1.21.x on Windows.
 - Behavior pack installed and enabled.
+- Resource pack installed and enabled (`Morph Staff RP`).
 - Required experiments/toggles for Script API enabled in the world.
 - Cheats enabled for command-driven scenarios.
 
@@ -168,10 +169,24 @@ Pass criteria:
 - No stuck invisibility after final cycle.
 - No new runtime errors in logs.
 
+### S12 - Held item visibility while morphed
+
+Actions:
+- Hold a visible item (for example, `minecraft:diamond_sword`) in main hand.
+- Start morph.
+- Observe player in third person (F5) while moving and using the held item.
+- Revert back to normal.
+
+Pass criteria:
+- While morphed, held hand items are hidden (no floating held-item visual).
+- Item use still works while morphed.
+- After revert, normal held-item visuals return.
+
 ## Recording Results
 
 Update `manual-results.json` in your current run directory.
 
 Required statuses:
-- Every required scenario `S01` through `S11` must be `PASS` for a release gate pass.
+- Every required scenario `S01` through `S12` must be `PASS` for a release gate pass.
 - Any `FAIL`, `SKIP`, or missing scenario is a release blocker.
+- When `S10`, `S11`, or `S12` are marked `PASS`, add non-empty notes in `manual-results.json` with what was observed.
