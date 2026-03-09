@@ -187,8 +187,19 @@ $recipePath = Join-Path $RootDir "recipes/wooden_staff.recipe.json"
 $configPath = Join-Path $RootDir "scripts/config.js"
 $readmePath = Join-Path $RootDir "README.md"
 $entryScriptPath = Join-Path $RootDir "scripts/main.js"
+$rpManifestPath = Join-Path $RootDir "MorphStaff_RP/manifest.json"
+$rpRenderControllerPath = Join-Path $RootDir "MorphStaff_RP/render_controllers/player.render_controllers.json"
 
-$requiredFiles = @($manifestPath, $itemPath, $recipePath, $configPath, $readmePath, $entryScriptPath)
+$requiredFiles = @(
+  $manifestPath,
+  $itemPath,
+  $recipePath,
+  $configPath,
+  $readmePath,
+  $entryScriptPath,
+  $rpManifestPath,
+  $rpRenderControllerPath
+)
 foreach ($file in $requiredFiles) {
   $exists = Test-Path -Path $file -PathType Leaf
   Add-Check -Result $result -Name "Required file: $file" -Passed $exists -Details (Select-Detail -Condition $exists -TrueText "$file exists." -FalseText "$file is missing.")
@@ -198,6 +209,8 @@ if ($result.blockers.Count -eq 0) {
   Test-JsonFile -Path $manifestPath -Result $result -Label "manifest.json"
   Test-JsonFile -Path $itemPath -Result $result -Label "items/wooden_staff.item.json"
   Test-JsonFile -Path $recipePath -Result $result -Label "recipes/wooden_staff.recipe.json"
+  Test-JsonFile -Path $rpManifestPath -Result $result -Label "MorphStaff_RP/manifest.json"
+  Test-JsonFile -Path $rpRenderControllerPath -Result $result -Label "MorphStaff_RP/render_controllers/player.render_controllers.json"
 
   $manifest = Read-JsonFile -Path $manifestPath
   $itemJson = Read-JsonFile -Path $itemPath

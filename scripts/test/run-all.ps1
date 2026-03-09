@@ -2,6 +2,7 @@
   [string]$RootDir = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path,
   [string]$RunDir,
   [string]$ManualResultsPath,
+  [string[]]$LogPathOverride,
   [switch]$NonInteractive
 )
 
@@ -36,18 +37,19 @@ Write-Host "Run directory: $RunDir"
 Write-Host "Manual results path: $ManualResultsPath"
 
 & $preflightScript -RootDir $RootDir -RunDir $RunDir -NoExit | Out-Null
-& $runtimeScript -Mode Begin -RootDir $RootDir -RunDir $RunDir -NoExit
+& $runtimeScript -Mode Begin -RootDir $RootDir -RunDir $RunDir -LogPathOverride $LogPathOverride -NoExit
 
 Write-Host ""
 Write-Host "Manual test matrix: $matrixPath"
 Write-Host "Update scenario statuses in: $ManualResultsPath"
+Write-Host "Optional runtime log override env var: MORPHSTAFF_BEDROCK_LOG_PATHS"
 Write-Host "Then continue to finalize runtime + gate checks."
 
 if (-not $NonInteractive) {
   [void](Read-Host "After completing in-game tests and updating manual results, press Enter to continue")
 }
 
-& $runtimeScript -Mode End -RootDir $RootDir -RunDir $RunDir -NoExit | Out-Null
+& $runtimeScript -Mode End -RootDir $RootDir -RunDir $RunDir -LogPathOverride $LogPathOverride -NoExit | Out-Null
 & $gateScript -RunDir $RunDir -ManualResultsPath $ManualResultsPath
 $gateExit = $LASTEXITCODE
 if ($null -eq $gateExit) {

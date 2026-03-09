@@ -241,6 +241,28 @@ function setPlayerInvisible(player, shouldBeInvisible) {
   }
 }
 
+function setPlayerMorphVisualTag(player, isMorphed) {
+  if (!isEntityValid(player)) {
+    return;
+  }
+
+  const tag = "morphstaff_morphed";
+  try {
+    if (isMorphed) {
+      if (!player.hasTag(tag)) {
+        player.addTag(tag);
+      }
+      return;
+    }
+
+    if (player.hasTag(tag)) {
+      player.removeTag(tag);
+    }
+  } catch (e) {
+    // Best-effort only.
+  }
+}
+
 function getLookTargetEntity(player, maxDistance = MORPH_CONFIG.targeting.maxDistance) {
   if (!isEntityValid(player)) {
     return undefined;
@@ -321,6 +343,13 @@ function removeProxyByState(state) {
     return;
   }
 
+  // Clear name tag first so no proxy keeps the player's name if remove() fails.
+  try {
+    proxy.nameTag = "";
+  } catch (e) {
+    // Best-effort only.
+  }
+
   try {
     proxy.remove();
   } catch (e) {
@@ -390,6 +419,7 @@ function startMorph(player, targetEntity) {
   }
 
   setPlayerInvisible(player, true);
+  setPlayerMorphVisualTag(player, true);
 
   const state = createMorphState(player, proxy, mobTypeId, now);
   setMorphState(player.id, state);
@@ -417,6 +447,7 @@ function stopMorph(player, reason = "manual") {
   removeProxyByState(state);
   clearAllPlayerState(player.id);
   setPlayerInvisible(player, false);
+  setPlayerMorphVisualTag(player, false);
   applyShortCooldown(player.id);
 
   if (reason === "manual") {
@@ -449,6 +480,7 @@ function cleanupMorphState(playerId, reason = "cleanup") {
   }
 
   setPlayerInvisible(player, false);
+  setPlayerMorphVisualTag(player, false);
 
   if (reason === "death") {
     showActionBar(player, "Morph cleared on death.");
@@ -712,6 +744,9 @@ function onPlayerSpawn(event) {
   if (!isEntityValid(player)) {
     return;
   }
+
+  // Defensive cleanup in case a previous session ended unexpectedly.
+  setPlayerMorphVisualTag(player, false);
 
   // Friendly readiness feedback.
   // VERSION NOTE: event.initialSpawn may not exist on some older builds.
