@@ -57,6 +57,30 @@ Extend by adding entity ids in `scripts/config.js` (`MORPHABLE_ENTITY_TYPES`).
    - Kill proxy while morphed.
    - Leave world while morphed.
 
+## Automated Test Harness (Strict Gate)
+
+Run the end-to-end test pipeline:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/test/run-all.ps1
+```
+
+What it does:
+
+- Runs static preflight checks.
+- Captures Bedrock runtime logs before/after gameplay validation.
+- Evaluates a strict release gate from preflight + runtime + manual scenario results.
+
+Artifacts are written to:
+
+- `artifacts/test-runs/<timestamp>/preflight-report.md`
+- `artifacts/test-runs/<timestamp>/runtime-report.md`
+- `artifacts/test-runs/<timestamp>/gate-summary.md`
+
+Manual test instructions live in:
+
+- `tests/bedrock-manual-matrix.md`
+
 ## Gameplay Rules Implemented
 
 - Staff is the only trigger item.
@@ -70,5 +94,5 @@ Extend by adding entity ids in `scripts/config.js` (`MORPHABLE_ENTITY_TYPES`).
 
 - Targeted for stable-first setup:
   - `min_engine_version`: `[1, 21, 0]`
-  - `@minecraft/server`: `2.5.0`
+  - `@minecraft/server`: `1.13.0`
 - Sound/particle ids vary between versions; effect helpers fail safely if unavailable.

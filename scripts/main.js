@@ -1,4 +1,4 @@
-import { system, world } from "@minecraft/server";
+﻿import { system, world } from "@minecraft/server";
 import { MORPH_CONFIG, getMobMorphConfig, isMorphableType } from "./config.js";
 import {
   clearAllPlayerState,
@@ -117,6 +117,7 @@ function getEntityById(entityId, preferredDimensionId) {
   for (const dimensionId of dimensionsToScan) {
     try {
       const dimension = world.getDimension(dimensionId);
+
       // VERSION NOTE: dimension.getEntity may be missing on older versions.
       if (typeof dimension.getEntity !== "function") {
         continue;
@@ -152,7 +153,7 @@ function isStaffItem(itemStack) {
   return !!itemStack && itemStack.typeId === MORPH_CONFIG.item.staffItemId;
 }
 
-function isHoldingStaff(player, itemStack) {
+function isHoldingMorphStaff(player, itemStack) {
   if (!isEntityValid(player)) {
     return false;
   }
@@ -164,7 +165,7 @@ function isHoldingStaff(player, itemStack) {
   return isStaffItem(getMainhandItem(player));
 }
 
-function canMorphTarget(target) {
+function isAllowedMorphTarget(target) {
   if (!isEntityValid(target)) {
     return false;
   }
@@ -279,7 +280,7 @@ function getLookTargetEntity(player, maxDistance = MORPH_CONFIG.targeting.maxDis
     let bestDistance = Number.POSITIVE_INFINITY;
 
     for (const entity of nearby) {
-      if (!canMorphTarget(entity)) {
+      if (!isAllowedMorphTarget(entity)) {
         continue;
       }
 
@@ -341,11 +342,16 @@ function createMorphState(player, proxy, mobTypeId, nowTick) {
   };
 }
 
-function startMorph(player, mobTypeId) {
+function startMorph(player, targetEntity) {
   if (!isEntityValid(player)) {
     return false;
   }
 
+  if (!isAllowedMorphTarget(targetEntity)) {
+    return false;
+  }
+
+  const mobTypeId = targetEntity.typeId;
   const now = getCurrentTick();
 
   if (hasMorphState(player.id)) {
@@ -389,7 +395,7 @@ function startMorph(player, mobTypeId) {
   setMorphState(player.id, state);
   applyShortCooldown(player.id);
 
-  syncProxyToPlayer(state, player, proxy);
+  syncMorphProxy(player, state, proxy);
 
   showActionBar(player, `Morphed into ${formatMobName(mobTypeId)}.`);
   playMorphSound(player, MORPH_CONFIG.visuals.morphStartSoundId);
@@ -427,7 +433,7 @@ function stopMorph(player, reason = "manual") {
   return true;
 }
 
-function cleanupMorphByPlayerId(playerId, reason = "cleanup") {
+function cleanupMorphState(playerId, reason = "cleanup") {
   const state = getMorphState(playerId);
   if (!state) {
     clearAllPlayerState(playerId);
@@ -465,12 +471,12 @@ function recreateProxyInPlayerDimension(state, player) {
   try {
     replacement = player.dimension.spawnEntity(state.mobTypeId, player.location);
   } catch (e) {
-    cleanupMorphByPlayerId(state.playerId, "proxy_invalid");
+    cleanupMorphState(state.playerId, "proxy_invalid");
     return undefined;
   }
 
   if (!isEntityValid(replacement)) {
-    cleanupMorphByPlayerId(state.playerId, "proxy_invalid");
+    cleanupMorphState(state.playerId, "proxy_invalid");
     return undefined;
   }
 
@@ -487,16 +493,16 @@ function recreateProxyInPlayerDimension(state, player) {
   return replacement;
 }
 
-function syncProxyToPlayer(state, playerOverride, proxyOverride) {
+function syncMorphProxy(playerOverride, state, proxyOverride) {
   const player = playerOverride || getPlayerById(state.playerId);
   if (!isEntityValid(player)) {
-    cleanupMorphByPlayerId(state.playerId, "disconnect");
+    cleanupMorphState(state.playerId, "disconnect");
     return;
   }
 
   let proxy = proxyOverride || getEntityById(state.proxyId, state.dimensionId);
   if (!isEntityValid(proxy)) {
-    cleanupMorphByPlayerId(state.playerId, "proxy_invalid");
+    cleanupMorphState(state.playerId, "proxy_invalid");
     return;
   }
 
@@ -521,7 +527,7 @@ function syncProxyToPlayer(state, playerOverride, proxyOverride) {
 
     proxy.teleport(player.location, teleportOptions);
   } catch (e) {
-    cleanupMorphByPlayerId(state.playerId, "proxy_invalid");
+    cleanupMorphState(state.playerId, "proxy_invalid");
   }
 }
 
@@ -555,16 +561,16 @@ function handleMorphAttemptFromEntity(player, target) {
     return;
   }
 
-  if (!canMorphTarget(target)) {
+  if (!isAllowedMorphTarget(target)) {
     showActionBar(player, "That entity cannot be morphed.");
     return;
   }
 
-  startMorph(player, target.typeId);
+  startMorph(player, target);
 }
 
 function handleStaffUse(player, itemStack) {
-  if (!isHoldingStaff(player, itemStack)) {
+  if (!isHoldingMorphStaff(player, itemStack)) {
     return;
   }
 
@@ -600,12 +606,12 @@ function handleStaffUse(player, itemStack) {
     return;
   }
 
-  if (!canMorphTarget(lookTarget)) {
+  if (!isAllowedMorphTarget(lookTarget)) {
     showActionBar(player, "That entity cannot be morphed.");
     return;
   }
 
-  startMorph(player, lookTarget.typeId);
+  startMorph(player, lookTarget);
 }
 
 function syncAllMorphs() {
@@ -614,17 +620,17 @@ function syncAllMorphs() {
   forEachMorphState((playerId, state) => {
     const player = getPlayerById(playerId);
     if (!isEntityValid(player)) {
-      cleanupMorphByPlayerId(playerId, "disconnect");
+      cleanupMorphState(playerId, "disconnect");
       return;
     }
 
     const proxy = getEntityById(state.proxyId, state.dimensionId);
     if (!isEntityValid(proxy)) {
-      cleanupMorphByPlayerId(playerId, "proxy_invalid");
+      cleanupMorphState(playerId, "proxy_invalid");
       return;
     }
 
-    syncProxyToPlayer(state, player, proxy);
+    syncMorphProxy(player, state, proxy);
     applyMobAbilityTick(state, player, proxy);
 
     if (now - state.lastInvisibilityRefreshTick >= MORPH_CONFIG.timing.invisibilityRefreshTicks) {
@@ -641,7 +647,7 @@ function garbageCollectMorphs() {
   forEachMorphState((playerId) => {
     const player = getPlayerById(playerId);
     if (!isEntityValid(player)) {
-      cleanupMorphByPlayerId(playerId, "disconnect");
+      cleanupMorphState(playerId, "disconnect");
     }
   });
 
@@ -657,7 +663,7 @@ function onPlayerInteractWithEntity(event) {
     return;
   }
 
-  if (!isHoldingStaff(player)) {
+  if (!isHoldingMorphStaff(player)) {
     return;
   }
 
@@ -681,14 +687,14 @@ function onEntityDie(event) {
 
   // Player death cleanup.
   if (hasMorphState(deadEntity.id)) {
-    cleanupMorphByPlayerId(deadEntity.id, "death");
+    cleanupMorphState(deadEntity.id, "death");
     return;
   }
 
   // Proxy death cleanup.
   const ownerState = findStateByProxyId(deadEntity.id);
   if (ownerState) {
-    cleanupMorphByPlayerId(ownerState.playerId, "proxy_invalid");
+    cleanupMorphState(ownerState.playerId, "proxy_invalid");
   }
 }
 
@@ -698,7 +704,7 @@ function onPlayerLeave(event) {
     return;
   }
 
-  cleanupMorphByPlayerId(playerId, "disconnect");
+  cleanupMorphState(playerId, "disconnect");
 }
 
 function onPlayerSpawn(event) {

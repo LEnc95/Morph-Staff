@@ -1,4 +1,4 @@
-import { MORPH_CONFIG } from "./config.js";
+﻿import { MORPH_CONFIG } from "./config.js";
 
 function runSafely(action) {
   try {
@@ -29,7 +29,7 @@ export function playMorphSound(player, soundId) {
   }
 
   runSafely(() => {
-    // Bedrock API call, not Java/Forge API.
+    // Bedrock Script API sound call.
     player.dimension.playSound(soundId, player.location);
   });
 }

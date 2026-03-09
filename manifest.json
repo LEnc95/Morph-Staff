@@ -1,11 +1,11 @@
-{
+﻿{
   "format_version": 2,
   "header": {
     "name": "Morph Staff BP v1.0.5",
     "description": "Morph Staff MVP behavior pack using Bedrock Script API proxy morphing.",
     "uuid": "400ea309-961f-4c4d-b000-57a896a0a8ac",
     "version": [1, 0, 5],
-    "min_engine_version": [1, 20, 80]
+    "min_engine_version": [1, 21, 0]
   },
   "modules": [
     {
@@ -30,4 +30,3 @@
     }
   ]
 }
-
