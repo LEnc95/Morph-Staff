@@ -1,6 +1,22 @@
-# Morph Staff BP
+# Morph Staff (BP + RP)
 
-A Minecraft Bedrock Behavior Pack that adds a `Wooden Staff` item for proxy-based morphing.
+A Minecraft Bedrock add-on split into:
+
+- `Morph Staff BP` (behavior pack): gameplay logic + Script API morph system.
+- `Morph Staff RP` (resource pack): client render override that hides held hand items while morphed.
+
+## Release Notes
+
+### v1.0.6 (BP) + v1.0.1 (RP)
+
+- Hardened runtime log discovery for gate execution (stable + preview paths, including `minecraftpe/NonAssertErrorLog.txt`).
+- Added deterministic runtime log path override support:
+  - `scripts/test/run-all.ps1 -LogPathOverride <path>`
+  - `MORPHSTAFF_BEDROCK_LOG_PATHS` environment variable (semicolon-delimited paths)
+- Strengthened manual QA evidence requirements:
+  - `tester`, `minecraftVersion`, and `worldName` are required in manual results.
+  - `S10`, `S11`, and `S12` require non-empty notes when marked `PASS`.
+- Kept RP held-item hiding behavior tied to player invisibility state.
 
 ## Why This Pack Exists
 
@@ -20,6 +36,8 @@ Bedrock add-ons cannot safely replace the player model at engine level for arbit
 - `scripts/morphState.js`: Active morph map + cooldown/interaction state.
 - `scripts/effects.js`: Action bar, sound, and particle wrappers.
 - `scripts/main.js`: Event subscriptions, morph lifecycle, sync, cleanup.
+- `MorphStaff_RP/manifest.json`: Resource pack manifest.
+- `MorphStaff_RP/render_controllers/player.render_controllers.json`: Player render override that hides `rightItem`/`leftItem` when the player is invisible.
 
 ## Whitelist (MVP)
 
@@ -37,13 +55,35 @@ Extend by adding entity ids in `scripts/config.js` (`MORPHABLE_ENTITY_TYPES`).
 
 ## Installation (Windows)
 
-1. Zip the `MorphStaff_BP` folder contents, or copy the folder directly into:
+1. Copy this repo (behavior pack root) into:
    - `%LOCALAPPDATA%\Packages\Microsoft.MinecraftUWP_8wekyb3d8bbwe\LocalState\games\com.mojang\behavior_packs\MorphStaff_BP`
-2. Start Minecraft Bedrock (stable or preview with Script API support).
-3. Create/edit a world and enable:
+2. Copy `MorphStaff_RP` into:
+   - `%LOCALAPPDATA%\Packages\Microsoft.MinecraftUWP_8wekyb3d8bbwe\LocalState\games\com.mojang\resource_packs\MorphStaff_RP`
+3. Start Minecraft Bedrock (stable or preview with Script API support).
+4. Create/edit a world and enable:
    - `Behavior Packs` -> `Morph Staff BP`
+   - `Resource Packs` -> `Morph Staff RP`
    - `Experimental` toggles needed for your version (for scripting/API).
-4. Enter the world.
+5. Enter the world.
+
+## Deploy To Local Production Folder
+
+Run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/deploy-prod.ps1
+```
+
+This copies:
+
+- BP files to `%LOCALAPPDATA%\\Packages\\Microsoft.MinecraftUWP_8wekyb3d8bbwe\\LocalState\\games\\com.mojang\\behavior_packs\\MorphStaff_BP`
+- RP files to `%LOCALAPPDATA%\\Packages\\Microsoft.MinecraftUWP_8wekyb3d8bbwe\\LocalState\\games\\com.mojang\\resource_packs\\MorphStaff_RP`
+
+For Preview builds, use:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/deploy-prod.ps1 -PreviewBuild
+```
 
 ## Quick Test Steps
 
@@ -51,7 +91,9 @@ Extend by adding entity ids in `scripts/config.js` (`MORPHABLE_ENTITY_TYPES`).
    - `/give @s morphstaff:wooden_staff`
 2. Spawn test mobs from the whitelist, then right-click/use staff on one.
 3. Confirm morph starts (action bar + sound/particle + proxy follows player).
+   - Held items are hidden while morphed (no floating item in hand).
 4. Right-click/use staff in air to revert.
+   - Held items become visible again after revert.
 5. Verify cleanup paths:
    - Kill player while morphed.
    - Kill proxy while morphed.
@@ -63,6 +105,17 @@ Run the end-to-end test pipeline:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/test/run-all.ps1
+```
+
+Optional log override examples:
+
+```powershell
+$env:MORPHSTAFF_BEDROCK_LOG_PATHS = "$env:LOCALAPPDATA\\Packages\\Microsoft.MinecraftUWP_8wekyb3d8bbwe\\LocalState\\games\\com.mojang\\minecraftpe"
+powershell -ExecutionPolicy Bypass -File scripts/test/run-all.ps1
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/test/run-all.ps1 -LogPathOverride "C:\\Path\\To\\NonAssertErrorLog.txt"
 ```
 
 What it does:
@@ -95,4 +148,5 @@ Manual test instructions live in:
 - Targeted for stable-first setup:
   - `min_engine_version`: `[1, 21, 0]`
   - `@minecraft/server`: `1.13.0`
+- RP item-hide behavior is tied to `query.is_invisible` for the player render controller, which matches morph state but also applies to other invisibility states.
 - Sound/particle ids vary between versions; effect helpers fail safely if unavailable.
