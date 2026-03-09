@@ -10,7 +10,7 @@
     },
     "components": {
       "minecraft:display_name": {
-        "value": "Wooden Staff v1.0.8"
+        "value": "Wooden Staff v1.1.0"
       },
       "minecraft:icon": {
         "texture": "stick"
