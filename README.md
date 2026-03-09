@@ -16,7 +16,7 @@ This repository is licensed under **PolyForm Noncommercial License 1.0.0**.
 
 ## Release Notes
 
-### v1.0.6 (BP) + v1.0.1 (RP)
+### v1.0.8 (BP) + v1.0.2 (RP)
 
 - Hardened runtime log discovery for gate execution (stable + preview paths, including `minecraftpe/NonAssertErrorLog.txt`).
 - Added deterministic runtime log path override support:
@@ -26,6 +26,8 @@ This repository is licensed under **PolyForm Noncommercial License 1.0.0**.
   - `tester`, `minecraftVersion`, and `worldName` are required in manual results.
   - `S10`, `S11`, and `S12` require non-empty notes when marked `PASS`.
 - Kept RP held-item hiding behavior tied to player invisibility state.
+- Added cache reset helper for stale Bedrock pack index state:
+  - `scripts/reset-stable-pack-cache.ps1`
 
 ## Why This Pack Exists
 
