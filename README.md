@@ -5,6 +5,15 @@ A Minecraft Bedrock add-on split into:
 - `Morph Staff BP` (behavior pack): gameplay logic + Script API morph system.
 - `Morph Staff RP` (resource pack): client render override that hides held hand items while morphed.
 
+## License
+
+This repository is licensed under **PolyForm Noncommercial License 1.0.0**.
+
+- Commercial/profit use is **not permitted**.
+- This project is public as a reference/example for noncommercial use.
+- See `LICENSE` for full terms.
+- See `NOTICE` for required notice lines that must be preserved when sharing copies.
+
 ## Release Notes
 
 ### v1.0.6 (BP) + v1.0.1 (RP)
