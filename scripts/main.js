@@ -20,6 +20,8 @@ import {
 import { playMorphSound, showActionBar, spawnMorphParticles } from "./effects.js";
 
 const DIMENSION_IDS = ["overworld", "nether", "the_end"];
+const MORPH_VISUAL_TAG = "morphstaff_morphed";
+const INVISIBILITY_EFFECT_IDS = ["minecraft:invisibility", "invisibility"];
 
 function getCurrentTick() {
   return typeof system.currentTick === "number" ? system.currentTick : 0;
@@ -200,44 +202,64 @@ function showCooldownMessage(player, nowTick) {
   showActionBar(player, `Cooldown: ${secondsLeft}s`);
 }
 
+function tryAddInvisibility(player, effectId) {
+  try {
+    player.addEffect(effectId, MORPH_CONFIG.timing.invisibilityDurationTicks, {
+      amplifier: 0,
+      showParticles: false
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function tryRemoveInvisibility(player, effectId) {
+  try {
+    player.removeEffect(effectId);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function safePlayerCommand(player, command) {
+  try {
+    player.runCommandAsync(command);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function setPlayerInvisible(player, shouldBeInvisible) {
   if (!isEntityValid(player)) {
     return;
   }
 
   if (shouldBeInvisible) {
-    try {
-      player.addEffect("invisibility", MORPH_CONFIG.timing.invisibilityDurationTicks, {
-        amplifier: 0,
-        showParticles: false
-      });
-      return;
-    } catch (e) {
-      // Fall back to command when addEffect signature differs by version.
+    for (const effectId of INVISIBILITY_EFFECT_IDS) {
+      if (tryAddInvisibility(player, effectId)) {
+        return;
+      }
     }
 
-    try {
-      // VERSION NOTE: runCommandAsync fallback can require cheats depending on version/settings.
-      const seconds = Math.max(1, Math.floor(MORPH_CONFIG.timing.invisibilityDurationTicks / 20));
-      player.runCommandAsync(`effect @s invisibility ${seconds} 0 true`);
-    } catch (e) {
-      // Best-effort only.
-    }
+    // VERSION NOTE: command fallback can require cheats depending on version/settings.
+    const seconds = Math.max(1, Math.floor(MORPH_CONFIG.timing.invisibilityDurationTicks / 20));
+    safePlayerCommand(player, `effect @s invisibility ${seconds} 0 true`);
 
     return;
   }
 
-  try {
-    player.removeEffect("invisibility");
-    return;
-  } catch (e) {
-    // Fall back to command.
+  let removed = false;
+  for (const effectId of INVISIBILITY_EFFECT_IDS) {
+    if (tryRemoveInvisibility(player, effectId)) {
+      removed = true;
+    }
   }
 
-  try {
-    player.runCommandAsync("effect @s clear invisibility");
-  } catch (e) {
-    // Best-effort only.
+  if (!removed) {
+    safePlayerCommand(player, "effect @s clear invisibility");
   }
 }
 
@@ -246,17 +268,16 @@ function setPlayerMorphVisualTag(player, isMorphed) {
     return;
   }
 
-  const tag = "morphstaff_morphed";
   try {
     if (isMorphed) {
-      if (!player.hasTag(tag)) {
-        player.addTag(tag);
+      if (!player.hasTag(MORPH_VISUAL_TAG)) {
+        player.addTag(MORPH_VISUAL_TAG);
       }
       return;
     }
 
-    if (player.hasTag(tag)) {
-      player.removeTag(tag);
+    if (player.hasTag(MORPH_VISUAL_TAG)) {
+      player.removeTag(MORPH_VISUAL_TAG);
     }
   } catch (e) {
     // Best-effort only.
@@ -333,36 +354,149 @@ function getLookTargetEntity(player, maxDistance = MORPH_CONFIG.targeting.maxDis
   }
 }
 
+function sanitizeTagToken(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, "_")
+    .slice(0, 48);
+}
+
+function getProxyOwnerTag(playerId) {
+  const token = sanitizeTagToken(playerId);
+  if (!token) {
+    return undefined;
+  }
+
+  return `morphstaff_owner_${token}`;
+}
+
+function safeEntityHasTag(entity, tag) {
+  if (!isEntityValid(entity) || !tag) {
+    return false;
+  }
+
+  try {
+    return entity.hasTag(tag);
+  } catch (e) {
+    return false;
+  }
+}
+
+function addTagIfAvailable(entity, tag) {
+  if (!isEntityValid(entity) || !tag) {
+    return;
+  }
+
+  try {
+    entity.addTag(tag);
+  } catch (e) {
+    // Best-effort metadata only.
+  }
+}
+
+function clearEntityNameTag(entity) {
+  if (!isEntityValid(entity)) {
+    return;
+  }
+
+  try {
+    entity.nameTag = "";
+  } catch (e) {
+    // Best-effort only.
+  }
+}
+
+function removeProxyEntity(entity) {
+  if (!isEntityValid(entity)) {
+    return;
+  }
+
+  clearEntityNameTag(entity);
+
+  try {
+    entity.remove();
+  } catch (e) {
+    // Ignore cleanup removal failure.
+  }
+}
+
+function forEachProxyEntity(visitor) {
+  for (const dimensionId of DIMENSION_IDS) {
+    let dimension;
+    try {
+      dimension = world.getDimension(dimensionId);
+    } catch (e) {
+      continue;
+    }
+
+    let proxies = [];
+    try {
+      proxies = dimension.getEntities({ tags: [MORPH_CONFIG.proxy.tag] });
+    } catch (e) {
+      // VERSION NOTE: fallback when tag filtering is not supported.
+      try {
+        proxies = dimension.getEntities();
+      } catch (innerError) {
+        proxies = [];
+      }
+    }
+
+    for (const entity of proxies) {
+      if (!isEntityValid(entity)) {
+        continue;
+      }
+
+      if (!safeEntityHasTag(entity, MORPH_CONFIG.proxy.tag)) {
+        continue;
+      }
+
+      visitor(entity);
+    }
+  }
+}
+
+function removeLingeringProxies(player, state) {
+  const expectedProxyId = state ? state.proxyId : undefined;
+  const expectedOwnerTag = state ? state.ownerTag : undefined;
+  const expectedName = isEntityValid(player) ? player.name : undefined;
+
+  forEachProxyEntity((proxy) => {
+    let shouldRemove = false;
+
+    if (expectedProxyId && proxy.id === expectedProxyId) {
+      shouldRemove = true;
+    } else if (expectedOwnerTag && safeEntityHasTag(proxy, expectedOwnerTag)) {
+      shouldRemove = true;
+    } else if (expectedName) {
+      try {
+        shouldRemove = proxy.nameTag === expectedName;
+      } catch (e) {
+        shouldRemove = false;
+      }
+    }
+
+    if (shouldRemove) {
+      removeProxyEntity(proxy);
+    }
+  });
+}
+
 function removeProxyByState(state) {
   if (!state) {
     return;
   }
 
   const proxy = getEntityById(state.proxyId, state.dimensionId);
-  if (!isEntityValid(proxy)) {
-    return;
-  }
-
-  // Clear name tag first so no proxy keeps the player's name if remove() fails.
-  try {
-    proxy.nameTag = "";
-  } catch (e) {
-    // Best-effort only.
-  }
-
-  try {
-    proxy.remove();
-  } catch (e) {
-    // Ignore cleanup removal failure.
-  }
+  removeProxyEntity(proxy);
 }
 
-function createMorphState(player, proxy, mobTypeId, nowTick) {
+function createMorphState(player, proxy, mobTypeId, ownerTag, nowTick) {
   const mobConfig = getMobMorphConfig(mobTypeId) || { abilityProfile: "none" };
 
   return {
     playerId: player.id,
     proxyId: proxy.id,
+    ownerTag,
     mobTypeId,
     abilityProfile: mobConfig.abilityProfile,
     dimensionId: normalizeDimensionId(player.dimension.id),
@@ -406,11 +540,9 @@ function startMorph(player, targetEntity) {
     return false;
   }
 
-  try {
-    proxy.addTag(MORPH_CONFIG.proxy.tag);
-  } catch (e) {
-    // Optional metadata tag.
-  }
+  const ownerTag = getProxyOwnerTag(player.id);
+  addTagIfAvailable(proxy, MORPH_CONFIG.proxy.tag);
+  addTagIfAvailable(proxy, ownerTag);
 
   try {
     proxy.nameTag = player.name;
@@ -421,7 +553,7 @@ function startMorph(player, targetEntity) {
   setPlayerInvisible(player, true);
   setPlayerMorphVisualTag(player, true);
 
-  const state = createMorphState(player, proxy, mobTypeId, now);
+  const state = createMorphState(player, proxy, mobTypeId, ownerTag, now);
   setMorphState(player.id, state);
   applyShortCooldown(player.id);
 
@@ -445,6 +577,7 @@ function stopMorph(player, reason = "manual") {
   }
 
   removeProxyByState(state);
+  removeLingeringProxies(player, state);
   clearAllPlayerState(player.id);
   setPlayerInvisible(player, false);
   setPlayerMorphVisualTag(player, false);
@@ -465,16 +598,18 @@ function stopMorph(player, reason = "manual") {
 }
 
 function cleanupMorphState(playerId, reason = "cleanup") {
+  const player = getPlayerById(playerId);
   const state = getMorphState(playerId);
   if (!state) {
+    removeLingeringProxies(player, undefined);
     clearAllPlayerState(playerId);
     return;
   }
 
   removeProxyByState(state);
+  removeLingeringProxies(player, state);
   clearAllPlayerState(playerId);
 
-  const player = getPlayerById(playerId);
   if (!isEntityValid(player)) {
     return;
   }
@@ -512,10 +647,13 @@ function recreateProxyInPlayerDimension(state, player) {
     return undefined;
   }
 
+  addTagIfAvailable(replacement, MORPH_CONFIG.proxy.tag);
+  addTagIfAvailable(replacement, state.ownerTag);
+
   try {
-    replacement.addTag(MORPH_CONFIG.proxy.tag);
+    replacement.nameTag = player.name;
   } catch (e) {
-    // Optional metadata tag.
+    // Optional cosmetic.
   }
 
   state.proxyId = replacement.id;
@@ -745,8 +883,15 @@ function onPlayerSpawn(event) {
     return;
   }
 
+  const state = getMorphState(player.id);
+
   // Defensive cleanup in case a previous session ended unexpectedly.
-  setPlayerMorphVisualTag(player, false);
+  setPlayerMorphVisualTag(player, !!state);
+  if (state) {
+    setPlayerInvisible(player, true);
+  } else {
+    removeLingeringProxies(player, undefined);
+  }
 
   // Friendly readiness feedback.
   // VERSION NOTE: event.initialSpawn may not exist on some older builds.
@@ -755,6 +900,15 @@ function onPlayerSpawn(event) {
   }
 
   showActionBar(player, "Staff ready. Use on a whitelisted mob.");
+}
+
+function cleanupOrphanedProxiesOnScriptStart() {
+  forEachProxyEntity((proxy) => {
+    const ownerState = findStateByProxyId(proxy.id);
+    if (!ownerState) {
+      removeProxyEntity(proxy);
+    }
+  });
 }
 
 const afterEvents = world.afterEvents || {};
@@ -770,6 +924,12 @@ safeSubscribe(beforeEvents.itemUse, onItemUse);
 safeSubscribe(afterEvents.entityDie, onEntityDie);
 safeSubscribe(afterEvents.playerLeave, onPlayerLeave);
 safeSubscribe(afterEvents.playerSpawn, onPlayerSpawn);
+
+try {
+  system.runTimeout(cleanupOrphanedProxiesOnScriptStart, 1);
+} catch (e) {
+  // Ignore if runTimeout is unavailable.
+}
 
 safeRunInterval(syncAllMorphs, MORPH_CONFIG.timing.proxySyncIntervalTicks);
 safeRunInterval(garbageCollectMorphs, MORPH_CONFIG.timing.garbageCollectIntervalTicks);
