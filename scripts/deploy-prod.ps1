@@ -4,7 +4,8 @@ param(
   [string]$ResourcePackName = "MorphStaff_RP",
   [Alias("PreviewBuild")]
   [switch]$PreviewOnly,
-  [switch]$StableOnly
+  [switch]$StableOnly,
+  [switch]$SkipDevelopment
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,6 +32,53 @@ if ($PreviewOnly) {
   $targets += @{ Label = "Preview"; Family = "Microsoft.MinecraftWindowsBeta_8wekyb3d8bbwe" }
 }
 
+function Copy-BehaviorPackContents {
+  param([string]$Destination)
+
+  foreach ($folder in $bpFolders) {
+    $src = Join-Path $RootDir $folder
+    if (Test-Path -Path $src -PathType Container) {
+      Copy-Item -Path $src -Destination $Destination -Recurse -Force
+    }
+  }
+
+  foreach ($file in $bpFiles) {
+    $src = Join-Path $RootDir $file
+    if (Test-Path -Path $src -PathType Leaf) {
+      Copy-Item -Path $src -Destination $Destination -Force
+    }
+  }
+}
+
+function Deploy-PackPair {
+  param(
+    [string]$Label,
+    [string]$MojangRoot,
+    [string]$BehaviorFolderName,
+    [string]$ResourceFolderName,
+    [string]$Flavor
+  )
+
+  $bpDest = Join-Path $MojangRoot "$BehaviorFolderName/$BehaviorPackName"
+  $rpDest = Join-Path $MojangRoot "$ResourceFolderName/$ResourcePackName"
+
+  if (Test-Path -Path $bpDest) {
+    Remove-Item -Path $bpDest -Recurse -Force
+  }
+  if (Test-Path -Path $rpDest) {
+    Remove-Item -Path $rpDest -Recurse -Force
+  }
+
+  New-Item -ItemType Directory -Force -Path $bpDest | Out-Null
+  New-Item -ItemType Directory -Force -Path $rpDest | Out-Null
+
+  Copy-BehaviorPackContents -Destination $bpDest
+  Copy-Item -Path (Join-Path $rpSource "*") -Destination $rpDest -Recurse -Force
+
+  Write-Host "[$Label][$Flavor] Behavior pack deployed to: $bpDest"
+  Write-Host "[$Label][$Flavor] Resource pack deployed to: $rpDest"
+}
+
 function Deploy-ToTarget {
   param(
     [string]$Label,
@@ -44,37 +92,13 @@ function Deploy-ToTarget {
   }
 
   $mojangRoot = Join-Path $packageRoot "LocalState/games/com.mojang"
-  $bpDest = Join-Path $mojangRoot "behavior_packs/$BehaviorPackName"
-  $rpDest = Join-Path $mojangRoot "resource_packs/$ResourcePackName"
 
-  if (Test-Path -Path $bpDest) {
-    Remove-Item -Path $bpDest -Recurse -Force
-  }
-  if (Test-Path -Path $rpDest) {
-    Remove-Item -Path $rpDest -Recurse -Force
+  Deploy-PackPair -Label $Label -MojangRoot $mojangRoot -BehaviorFolderName "behavior_packs" -ResourceFolderName "resource_packs" -Flavor "standard"
+
+  if (-not $SkipDevelopment) {
+    Deploy-PackPair -Label $Label -MojangRoot $mojangRoot -BehaviorFolderName "development_behavior_packs" -ResourceFolderName "development_resource_packs" -Flavor "development"
   }
 
-  New-Item -ItemType Directory -Force -Path $bpDest | Out-Null
-  New-Item -ItemType Directory -Force -Path $rpDest | Out-Null
-
-  foreach ($folder in $bpFolders) {
-    $src = Join-Path $RootDir $folder
-    if (Test-Path -Path $src -PathType Container) {
-      Copy-Item -Path $src -Destination $bpDest -Recurse -Force
-    }
-  }
-
-  foreach ($file in $bpFiles) {
-    $src = Join-Path $RootDir $file
-    if (Test-Path -Path $src -PathType Leaf) {
-      Copy-Item -Path $src -Destination $bpDest -Force
-    }
-  }
-
-  Copy-Item -Path (Join-Path $rpSource "*") -Destination $rpDest -Recurse -Force
-
-  Write-Host "[$Label] Behavior pack deployed to: $bpDest"
-  Write-Host "[$Label] Resource pack deployed to: $rpDest"
   return $true
 }
 
@@ -93,4 +117,9 @@ if (-not $PreviewOnly -and -not $StableOnly) {
   Write-Host "Deployed to all detected targets (Stable + Preview when installed)."
 }
 
+if (-not $SkipDevelopment) {
+  Write-Host "Development pack folders were also synced to avoid stale UUID/version conflicts."
+}
+
+Write-Host "Fully close Minecraft and relaunch before testing."
 Write-Host "Enable both packs in your world before testing."
