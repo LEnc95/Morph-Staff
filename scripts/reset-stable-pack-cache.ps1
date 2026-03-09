@@ -1,6 +1,7 @@
 param(
   [string]$Family = "Microsoft.MinecraftUWP_8wekyb3d8bbwe",
-  [switch]$AlsoPreview
+  [switch]$AlsoPreview,
+  [switch]$ClearLocalCache
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,9 +9,15 @@ $ErrorActionPreference = "Stop"
 function Reset-PackCacheForFamily {
   param([string]$TargetFamily)
 
-  $minecraftPeDir = Join-Path $env:LOCALAPPDATA "Packages/$TargetFamily/LocalState/games/com.mojang/minecraftpe"
-  if (-not (Test-Path -Path $minecraftPeDir -PathType Container)) {
+  $packageRoot = Join-Path $env:LOCALAPPDATA "Packages/$TargetFamily"
+  if (-not (Test-Path -Path $packageRoot -PathType Container)) {
     Write-Warning "Minecraft package path not found for family: $TargetFamily"
+    return
+  }
+
+  $minecraftPeDir = Join-Path $packageRoot "LocalState/games/com.mojang/minecraftpe"
+  if (-not (Test-Path -Path $minecraftPeDir -PathType Container)) {
+    Write-Warning "Minecraft LocalState path not found for family: $TargetFamily"
     return
   }
 
@@ -33,6 +40,30 @@ function Reset-PackCacheForFamily {
 
   if (Test-Path -Path $validKnownPacks -PathType Leaf) {
     Remove-Item -Path $validKnownPacks -Force
+  }
+
+  if ($ClearLocalCache) {
+    $localCacheRoot = Join-Path $packageRoot "LocalCache/minecraftpe"
+    $packCacheDir = Join-Path $localCacheRoot "packcache"
+    $downloadTempDir = Join-Path $localCacheRoot "DownloadTemp"
+    $downloadHistory = Join-Path $downloadTempDir "update_history.json"
+
+    $cacheBackupDir = Join-Path $backupDir "localcache"
+    New-Item -ItemType Directory -Force -Path $cacheBackupDir | Out-Null
+
+    if (Test-Path -Path $downloadHistory -PathType Leaf) {
+      Copy-Item -Path $downloadHistory -Destination (Join-Path $cacheBackupDir "update_history.json") -Force
+    }
+
+    if (Test-Path -Path $packCacheDir -PathType Container) {
+      Remove-Item -Path $packCacheDir -Recurse -Force
+    }
+
+    if (Test-Path -Path $downloadTempDir -PathType Container) {
+      Remove-Item -Path $downloadTempDir -Recurse -Force
+    }
+
+    Write-Host "[$TargetFamily] cleared LocalCache packcache + DownloadTemp"
   }
 
   Write-Host "[$TargetFamily] backup: $backupDir"
