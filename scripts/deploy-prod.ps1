@@ -5,7 +5,8 @@ param(
   [Alias("PreviewBuild")]
   [switch]$PreviewOnly,
   [switch]$StableOnly,
-  [switch]$SkipDevelopment
+  [switch]$SkipDevelopment,
+  [switch]$SkipPlayground
 )
 
 $ErrorActionPreference = "Stop"
@@ -102,6 +103,34 @@ function Deploy-ToTarget {
   return $true
 }
 
+function Deploy-ToPlayground {
+  $playgroundRoot = Join-Path $env:USERPROFILE "Documents/Playground"
+  if (-not (Test-Path -Path $playgroundRoot -PathType Container)) {
+    Write-Warning "Playground root not found: $playgroundRoot"
+    return $false
+  }
+
+  $bpDest = Join-Path $playgroundRoot $BehaviorPackName
+  $rpDest = Join-Path $playgroundRoot $ResourcePackName
+
+  if (Test-Path -Path $bpDest) {
+    Remove-Item -Path $bpDest -Recurse -Force
+  }
+  if (Test-Path -Path $rpDest) {
+    Remove-Item -Path $rpDest -Recurse -Force
+  }
+
+  New-Item -ItemType Directory -Force -Path $bpDest | Out-Null
+  New-Item -ItemType Directory -Force -Path $rpDest | Out-Null
+
+  Copy-BehaviorPackContents -Destination $bpDest
+  Copy-Item -Path (Join-Path $rpSource "*") -Destination $rpDest -Recurse -Force
+
+  Write-Host "[Playground] Behavior pack deployed to: $bpDest"
+  Write-Host "[Playground] Resource pack deployed to: $rpDest"
+  return $true
+}
+
 $successCount = 0
 foreach ($target in $targets) {
   if (Deploy-ToTarget -Label $target.Label -Family $target.Family) {
@@ -119,6 +148,10 @@ if (-not $PreviewOnly -and -not $StableOnly) {
 
 if (-not $SkipDevelopment) {
   Write-Host "Development pack folders were also synced to avoid stale UUID/version conflicts."
+}
+
+if (-not $SkipPlayground) {
+  Deploy-ToPlayground | Out-Null
 }
 
 Write-Host "Fully close Minecraft and relaunch before testing."
