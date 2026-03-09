@@ -1,16 +1,13 @@
-﻿param(
+param(
   [string]$RootDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
   [string]$BehaviorPackName = "MorphStaff_BP",
   [string]$ResourcePackName = "MorphStaff_RP",
-  [switch]$PreviewBuild
+  [Alias("PreviewBuild")]
+  [switch]$PreviewOnly,
+  [switch]$StableOnly
 )
 
 $ErrorActionPreference = "Stop"
-
-$family = if ($PreviewBuild) { "Microsoft.MinecraftWindowsBeta_8wekyb3d8bbwe" } else { "Microsoft.MinecraftUWP_8wekyb3d8bbwe" }
-$mojangRoot = Join-Path $env:LOCALAPPDATA "Packages/$family/LocalState/games/com.mojang"
-$bpDest = Join-Path $mojangRoot "behavior_packs/$BehaviorPackName"
-$rpDest = Join-Path $mojangRoot "resource_packs/$ResourcePackName"
 
 $rpSource = Join-Path $RootDir "MorphStaff_RP"
 if (-not (Test-Path -Path $rpSource -PathType Container)) {
@@ -20,25 +17,80 @@ if (-not (Test-Path -Path $rpSource -PathType Container)) {
 $bpFolders = @("items", "recipes", "scripts")
 $bpFiles = @("manifest.json", "pack_icon.png", "README.md")
 
-New-Item -ItemType Directory -Force -Path $bpDest | Out-Null
-New-Item -ItemType Directory -Force -Path $rpDest | Out-Null
+if ($PreviewOnly -and $StableOnly) {
+  throw "Choose only one target switch: -PreviewOnly or -StableOnly."
+}
 
-foreach ($folder in $bpFolders) {
-  $src = Join-Path $RootDir $folder
-  if (Test-Path -Path $src -PathType Container) {
-    Copy-Item -Path $src -Destination $bpDest -Recurse -Force
+$targets = @()
+if ($PreviewOnly) {
+  $targets += @{ Label = "Preview"; Family = "Microsoft.MinecraftWindowsBeta_8wekyb3d8bbwe" }
+} elseif ($StableOnly) {
+  $targets += @{ Label = "Stable"; Family = "Microsoft.MinecraftUWP_8wekyb3d8bbwe" }
+} else {
+  $targets += @{ Label = "Stable"; Family = "Microsoft.MinecraftUWP_8wekyb3d8bbwe" }
+  $targets += @{ Label = "Preview"; Family = "Microsoft.MinecraftWindowsBeta_8wekyb3d8bbwe" }
+}
+
+function Deploy-ToTarget {
+  param(
+    [string]$Label,
+    [string]$Family
+  )
+
+  $packageRoot = Join-Path $env:LOCALAPPDATA "Packages/$Family"
+  if (-not (Test-Path -Path $packageRoot -PathType Container)) {
+    Write-Warning "$Label target not installed: $packageRoot"
+    return $false
+  }
+
+  $mojangRoot = Join-Path $packageRoot "LocalState/games/com.mojang"
+  $bpDest = Join-Path $mojangRoot "behavior_packs/$BehaviorPackName"
+  $rpDest = Join-Path $mojangRoot "resource_packs/$ResourcePackName"
+
+  if (Test-Path -Path $bpDest) {
+    Remove-Item -Path $bpDest -Recurse -Force
+  }
+  if (Test-Path -Path $rpDest) {
+    Remove-Item -Path $rpDest -Recurse -Force
+  }
+
+  New-Item -ItemType Directory -Force -Path $bpDest | Out-Null
+  New-Item -ItemType Directory -Force -Path $rpDest | Out-Null
+
+  foreach ($folder in $bpFolders) {
+    $src = Join-Path $RootDir $folder
+    if (Test-Path -Path $src -PathType Container) {
+      Copy-Item -Path $src -Destination $bpDest -Recurse -Force
+    }
+  }
+
+  foreach ($file in $bpFiles) {
+    $src = Join-Path $RootDir $file
+    if (Test-Path -Path $src -PathType Leaf) {
+      Copy-Item -Path $src -Destination $bpDest -Force
+    }
+  }
+
+  Copy-Item -Path (Join-Path $rpSource "*") -Destination $rpDest -Recurse -Force
+
+  Write-Host "[$Label] Behavior pack deployed to: $bpDest"
+  Write-Host "[$Label] Resource pack deployed to: $rpDest"
+  return $true
+}
+
+$successCount = 0
+foreach ($target in $targets) {
+  if (Deploy-ToTarget -Label $target.Label -Family $target.Family) {
+    $successCount++
   }
 }
 
-foreach ($file in $bpFiles) {
-  $src = Join-Path $RootDir $file
-  if (Test-Path -Path $src -PathType Leaf) {
-    Copy-Item -Path $src -Destination $bpDest -Force
-  }
+if ($successCount -eq 0) {
+  throw "No deploy targets were available."
 }
 
-Copy-Item -Path (Join-Path $rpSource "*") -Destination $rpDest -Recurse -Force
+if (-not $PreviewOnly -and -not $StableOnly) {
+  Write-Host "Deployed to all detected targets (Stable + Preview when installed)."
+}
 
-Write-Host "Behavior pack deployed to: $bpDest"
-Write-Host "Resource pack deployed to: $rpDest"
 Write-Host "Enable both packs in your world before testing."
