@@ -118,6 +118,18 @@ powershell -ExecutionPolicy Bypass -File scripts/test/run-all.ps1
 powershell -ExecutionPolicy Bypass -File scripts/test/run-all.ps1 -LogPathOverride "C:\\Path\\To\\NonAssertErrorLog.txt"
 ```
 
+Initialize manual results metadata for a run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/test/init-manual-results.ps1 -RunDir "artifacts/test-runs/<timestamp>" -MinecraftVersion "1.21.x" -WorldName "YourWorld"
+```
+
+Find the latest passing gate artifact:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/test/find-latest-pass.ps1
+```
+
 What it does:
 
 - Runs static preflight checks.
