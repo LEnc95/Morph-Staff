@@ -1,10 +1,60 @@
 param(
   [string]$Family = "Microsoft.MinecraftUWP_8wekyb3d8bbwe",
   [switch]$AlsoPreview,
-  [switch]$ClearLocalCache
+  [switch]$ClearLocalCache,
+  [switch]$RemoveKnownTestPacks,
+  [switch]$RemoveMorphStaffPacks,
+  [switch]$ForceCloseMinecraft
 )
 
 $ErrorActionPreference = "Stop"
+
+function Close-MinecraftProcesses {
+  $processNames = @(
+    "Minecraft.Windows",
+    "Minecraft",
+    "Minecraft.WindowsBeta"
+  )
+
+  foreach ($name in $processNames) {
+    Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  }
+
+  Write-Host "Attempted to close active Minecraft processes."
+}
+
+function Remove-PackFoldersByName {
+  param(
+    [string]$MojangRoot,
+    [string[]]$FolderNames
+  )
+
+  if (-not $FolderNames -or $FolderNames.Count -eq 0) {
+    return
+  }
+
+  $parents = @(
+    "behavior_packs",
+    "development_behavior_packs",
+    "resource_packs",
+    "development_resource_packs"
+  )
+
+  foreach ($parent in $parents) {
+    $parentPath = Join-Path $MojangRoot $parent
+    if (-not (Test-Path -Path $parentPath -PathType Container)) {
+      continue
+    }
+
+    foreach ($folderName in $FolderNames) {
+      $target = Join-Path $parentPath $folderName
+      if (Test-Path -Path $target) {
+        Remove-Item -Path $target -Recurse -Force
+        Write-Host "Removed pack folder: $target"
+      }
+    }
+  }
+}
 
 function Reset-PackCacheForFamily {
   param([string]$TargetFamily)
@@ -16,6 +66,30 @@ function Reset-PackCacheForFamily {
   }
 
   $minecraftPeDir = Join-Path $packageRoot "LocalState/games/com.mojang/minecraftpe"
+  $mojangRoot = Join-Path $packageRoot "LocalState/games/com.mojang"
+
+  if ($RemoveKnownTestPacks -or $RemoveMorphStaffPacks) {
+    $foldersToRemove = @()
+    if ($RemoveKnownTestPacks) {
+      $foldersToRemove += @(
+        "AAA_Local_Test",
+        "AAB_V3_Test",
+        "ZZ_DiagBP",
+        "ZZ_ScriptDiag"
+      )
+    }
+    if ($RemoveMorphStaffPacks) {
+      $foldersToRemove += @(
+        "MorphStaff_BP",
+        "MorphStaff_RP"
+      )
+    }
+
+    if (Test-Path -Path $mojangRoot -PathType Container) {
+      Remove-PackFoldersByName -MojangRoot $mojangRoot -FolderNames ($foldersToRemove | Select-Object -Unique)
+    }
+  }
+
   if (-not (Test-Path -Path $minecraftPeDir -PathType Container)) {
     Write-Warning "Minecraft LocalState path not found for family: $TargetFamily"
     return
@@ -68,6 +142,10 @@ function Reset-PackCacheForFamily {
 
   Write-Host "[$TargetFamily] backup: $backupDir"
   Write-Host "[$TargetFamily] reset global_resource_packs.json and removed valid_known_packs.json"
+}
+
+if ($ForceCloseMinecraft) {
+  Close-MinecraftProcesses
 }
 
 Reset-PackCacheForFamily -TargetFamily $Family

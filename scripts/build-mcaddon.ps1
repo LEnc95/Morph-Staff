@@ -1,10 +1,27 @@
 param(
   [string]$RootDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
   [string]$OutDir = (Join-Path (Resolve-Path (Join-Path $PSScriptRoot "..")).Path "dist"),
-  [string]$Name = "MorphStaff-v1.1.0"
+  [string]$Name
 )
 
 $ErrorActionPreference = "Stop"
+
+function Get-DefaultBuildName {
+  param([string]$PackRoot)
+
+  $manifestPath = Join-Path $PackRoot "manifest.json"
+  if (-not (Test-Path -Path $manifestPath -PathType Leaf)) {
+    throw "Missing behavior pack manifest: $manifestPath"
+  }
+
+  $manifest = Get-Content -Raw -Path $manifestPath | ConvertFrom-Json
+  $version = @($manifest.header.version) -join "."
+  if ([string]::IsNullOrWhiteSpace($version)) {
+    throw "Unable to derive version from manifest header.version."
+  }
+
+  return "MorphStaff-v$version"
+}
 
 function Remove-IfExists {
   param([string]$PathToRemove)
@@ -19,11 +36,15 @@ function New-CleanDir {
   New-Item -ItemType Directory -Force -Path $PathToCreate | Out-Null
 }
 
-$bpSourcePaths = @("manifest.json", "pack_icon.png", "README.md", "items", "recipes", "scripts")
+$bpSourcePaths = @("manifest.json", "pack_icon.png", "README.md", "items", "recipes", "scripts", "entities")
 $rpSourceDir = Join-Path $RootDir "MorphStaff_RP"
 
 if (-not (Test-Path -Path $rpSourceDir -PathType Container)) {
   throw "Missing RP folder: $rpSourceDir"
+}
+
+if (-not $Name) {
+  $Name = Get-DefaultBuildName -PackRoot $RootDir
 }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null

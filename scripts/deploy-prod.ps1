@@ -15,7 +15,7 @@ if (-not (Test-Path -Path $rpSource -PathType Container)) {
   throw "Missing RP source folder: $rpSource"
 }
 
-$bpFolders = @("items", "recipes", "scripts")
+$bpFolders = @("items", "recipes", "scripts", "entities")
 $bpFiles = @("manifest.json", "pack_icon.png", "README.md")
 
 if ($PreviewOnly -and $StableOnly) {

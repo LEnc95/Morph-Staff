@@ -69,6 +69,20 @@ function Read-JsonFile {
   return $raw | ConvertFrom-Json
 }
 
+function Get-RecipeResultItem {
+  param($RecipeJson)
+
+  if ($RecipeJson.'minecraft:recipe_shapeless') {
+    return [string]$RecipeJson.'minecraft:recipe_shapeless'.result.item
+  }
+
+  if ($RecipeJson.'minecraft:recipe_shaped') {
+    return [string]$RecipeJson.'minecraft:recipe_shaped'.result.item
+  }
+
+  return ""
+}
+
 function Test-JsonFile {
   param(
     [string]$Path,
@@ -183,7 +197,16 @@ $result = New-Result
 
 $manifestPath = Join-Path $RootDir "manifest.json"
 $itemPath = Join-Path $RootDir "items/wooden_staff.item.json"
-$recipePath = Join-Path $RootDir "recipes/wooden_staff.recipe.json"
+$recipeShapelessPath = Join-Path $RootDir "recipes/wooden_staff.recipe.json"
+$recipeShapedPath = Join-Path $RootDir "recipes/wooden_staff_shaped.recipe.json"
+$proxyEntityPaths = @(
+  (Join-Path $RootDir "entities/morphstaff_zombie_proxy.entity.json"),
+  (Join-Path $RootDir "entities/morphstaff_husk_proxy.entity.json"),
+  (Join-Path $RootDir "entities/morphstaff_drowned_proxy.entity.json"),
+  (Join-Path $RootDir "entities/morphstaff_skeleton_proxy.entity.json"),
+  (Join-Path $RootDir "entities/morphstaff_stray_proxy.entity.json"),
+  (Join-Path $RootDir "entities/morphstaff_creeper_proxy.entity.json")
+)
 $configPath = Join-Path $RootDir "scripts/config.js"
 $readmePath = Join-Path $RootDir "README.md"
 $entryScriptPath = Join-Path $RootDir "scripts/main.js"
@@ -193,7 +216,9 @@ $rpRenderControllerPath = Join-Path $RootDir "MorphStaff_RP/render_controllers/p
 $requiredFiles = @(
   $manifestPath,
   $itemPath,
-  $recipePath,
+  $recipeShapelessPath,
+  $recipeShapedPath
+) + $proxyEntityPaths + @(
   $configPath,
   $readmePath,
   $entryScriptPath,
@@ -208,13 +233,19 @@ foreach ($file in $requiredFiles) {
 if ($result.blockers.Count -eq 0) {
   Test-JsonFile -Path $manifestPath -Result $result -Label "manifest.json"
   Test-JsonFile -Path $itemPath -Result $result -Label "items/wooden_staff.item.json"
-  Test-JsonFile -Path $recipePath -Result $result -Label "recipes/wooden_staff.recipe.json"
+  Test-JsonFile -Path $recipeShapelessPath -Result $result -Label "recipes/wooden_staff.recipe.json"
+  Test-JsonFile -Path $recipeShapedPath -Result $result -Label "recipes/wooden_staff_shaped.recipe.json"
+  foreach ($proxyPath in $proxyEntityPaths) {
+    $label = "entities/$([System.IO.Path]::GetFileName($proxyPath))"
+    Test-JsonFile -Path $proxyPath -Result $result -Label $label
+  }
   Test-JsonFile -Path $rpManifestPath -Result $result -Label "MorphStaff_RP/manifest.json"
   Test-JsonFile -Path $rpRenderControllerPath -Result $result -Label "MorphStaff_RP/render_controllers/player.render_controllers.json"
 
   $manifest = Read-JsonFile -Path $manifestPath
   $itemJson = Read-JsonFile -Path $itemPath
-  $recipeJson = Read-JsonFile -Path $recipePath
+  $recipeShapelessJson = Read-JsonFile -Path $recipeShapelessPath
+  $recipeShapedJson = Read-JsonFile -Path $recipeShapedPath
 
   $headerVersion = @($manifest.header.version)
   $moduleVersions = @($manifest.modules | ForEach-Object { @($_.version) -join "." })
@@ -237,13 +268,55 @@ if ($result.blockers.Count -eq 0) {
   }
 
   $itemId = [string]$itemJson.'minecraft:item'.description.identifier
-  $recipeId = [string]$recipeJson.'minecraft:recipe_shapeless'.result.item
+  $recipeShapelessId = Get-RecipeResultItem -RecipeJson $recipeShapelessJson
+  $recipeShapedId = Get-RecipeResultItem -RecipeJson $recipeShapedJson
   $configRaw = Get-Content -Raw -Path $configPath
   $configMatch = [regex]::Match($configRaw, 'staffItemId\s*:\s*"([^"]+)"')
   $configId = if ($configMatch.Success) { $configMatch.Groups[1].Value } else { "" }
 
-  Add-Check -Result $result -Name "Item/Recipe ID match" -Passed ($itemId -eq $recipeId -and $itemId -ne "") -Details (Select-Detail -Condition ($itemId -eq $recipeId -and $itemId -ne "") -TrueText "Item and recipe both use '$itemId'." -FalseText "Item id '$itemId' and recipe id '$recipeId' do not match.")
+  $recipeIdsMatch = (
+    $itemId -ne "" -and
+    $itemId -eq $recipeShapelessId -and
+    $itemId -eq $recipeShapedId
+  )
+  Add-Check -Result $result -Name "Item/Recipe ID match" -Passed $recipeIdsMatch -Details (Select-Detail -Condition $recipeIdsMatch -TrueText "Item and both recipes use '$itemId'." -FalseText "Item id '$itemId', shapeless recipe id '$recipeShapelessId', and shaped recipe id '$recipeShapedId' do not match.")
   Add-Check -Result $result -Name "Config staff item ID match" -Passed ($configId -eq $itemId -and $configId -ne "") -Details (Select-Detail -Condition ($configId -eq $itemId -and $configId -ne "") -TrueText "config.js staffItemId matches '$itemId'." -FalseText "config.js staffItemId '$configId' does not match item id '$itemId'.")
+
+  $entityIdToPath = @{}
+  foreach ($proxyPath in $proxyEntityPaths) {
+    if (-not (Test-Path -Path $proxyPath -PathType Leaf)) {
+      continue
+    }
+
+    try {
+      $entityJson = Read-JsonFile -Path $proxyPath
+      $entityIdentifier = [string]$entityJson.'minecraft:entity'.description.identifier
+      if (-not [string]::IsNullOrWhiteSpace($entityIdentifier)) {
+        $entityIdToPath[$entityIdentifier] = $proxyPath
+      }
+    } catch {
+      # JSON parse failure already captured by Test-JsonFile.
+    }
+  }
+
+  $overrideBlockMatch = [regex]::Match($configRaw, 'proxyEntityOverrides\s*:\s*\{([\s\S]*?)\}')
+  $overrideTargets = @()
+  if ($overrideBlockMatch.Success) {
+    $inner = $overrideBlockMatch.Groups[1].Value
+    $targetMatches = [regex]::Matches($inner, '"[^"]+"\s*:\s*"([^"]+)"')
+    foreach ($m in $targetMatches) {
+      $overrideTargets += $m.Groups[1].Value
+    }
+  }
+
+  $missingOverrideTargets = @()
+  foreach ($targetId in $overrideTargets | Select-Object -Unique) {
+    if (-not $entityIdToPath.ContainsKey($targetId)) {
+      $missingOverrideTargets += $targetId
+    }
+  }
+
+  Add-Check -Result $result -Name "Proxy override entity targets exist" -Passed ($missingOverrideTargets.Count -eq 0) -Details (Select-Detail -Condition ($missingOverrideTargets.Count -eq 0) -TrueText "All proxyEntityOverrides targets resolve to entity files." -FalseText "Missing proxy entity definitions for: $($missingOverrideTargets -join ', ').")
 
   Test-ImportGraph -EntryFile $entryScriptPath -Result $result
 

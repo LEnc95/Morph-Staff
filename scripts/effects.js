@@ -1,4 +1,4 @@
-﻿import { MORPH_CONFIG } from "./config.js";
+import { MORPH_CONFIG } from "./config.js";
 
 function runSafely(action) {
   try {
@@ -17,9 +17,18 @@ export function showActionBar(player, text) {
     return;
   }
 
+  const message = formatMessage(text);
+
   runSafely(() => {
     // VERSION NOTE: onScreenDisplay exists on modern Script API builds.
-    player.onScreenDisplay.setActionBar(formatMessage(text));
+    if (player.onScreenDisplay && typeof player.onScreenDisplay.setActionBar === "function") {
+      player.onScreenDisplay.setActionBar(message);
+      return;
+    }
+
+    if (typeof player.sendMessage === "function") {
+      player.sendMessage(message);
+    }
   });
 }
 

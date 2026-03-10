@@ -1,5 +1,10 @@
-﻿import { system, world } from "@minecraft/server";
-import { MORPH_CONFIG, getMobMorphConfig, isMorphableType } from "./config.js";
+import { system, world } from "@minecraft/server";
+import {
+  MORPH_CONFIG,
+  getMobMorphConfig,
+  getProxyEntityTypeForMob,
+  isMorphableType
+} from "./config.js";
 import {
   clearAllPlayerState,
   clearExpiredCooldowns,
@@ -20,11 +25,22 @@ import {
 import { playMorphSound, showActionBar, spawnMorphParticles } from "./effects.js";
 
 const DIMENSION_IDS = ["overworld", "nether", "the_end"];
+const TICK_TIME_MS = 50;
 const MORPH_VISUAL_TAG = "morphstaff_morphed";
 const INVISIBILITY_EFFECT_IDS = ["minecraft:invisibility", "invisibility"];
+const RESISTANCE_EFFECT_IDS = ["minecraft:resistance", "resistance"];
+const WATER_BREATHING_EFFECT_IDS = ["minecraft:water_breathing", "water_breathing"];
+const CRAFTING_TABLE_BLOCK_ID = "minecraft:crafting_table";
+const STAFF_FALLBACK_INGREDIENT_ITEM_ID = "minecraft:stick";
+const STAFF_FALLBACK_INGREDIENT_COUNT = 2;
 
 function getCurrentTick() {
-  return typeof system.currentTick === "number" ? system.currentTick : 0;
+  if (typeof system.currentTick === "number" && Number.isFinite(system.currentTick)) {
+    return system.currentTick;
+  }
+
+  // Fallback for runtimes where currentTick is unavailable.
+  return Math.floor(Date.now() / TICK_TIME_MS);
 }
 
 function safeSubscribe(signal, handler) {
@@ -63,6 +79,18 @@ function isEntityValid(entity) {
 
 function isPlayerEntity(entity) {
   return !!entity && entity.typeId === "minecraft:player";
+}
+
+function isLivingEntity(entity) {
+  if (!isEntityValid(entity)) {
+    return false;
+  }
+
+  try {
+    return !!entity.getComponent("minecraft:health");
+  } catch (e) {
+    return false;
+  }
 }
 
 function normalizeDimensionId(rawDimensionId) {
@@ -151,6 +179,15 @@ function getMainhandItem(player) {
   }
 }
 
+function getInventoryContainer(player) {
+  try {
+    const inventory = player.getComponent("minecraft:inventory");
+    return inventory ? inventory.container : undefined;
+  } catch (e) {
+    return undefined;
+  }
+}
+
 function isStaffItem(itemStack) {
   return !!itemStack && itemStack.typeId === MORPH_CONFIG.item.staffItemId;
 }
@@ -167,12 +204,103 @@ function isHoldingMorphStaff(player, itemStack) {
   return isStaffItem(getMainhandItem(player));
 }
 
+function countItemInContainer(container, itemId) {
+  if (!container || !itemId) {
+    return 0;
+  }
+
+  let total = 0;
+  for (let i = 0; i < container.size; i++) {
+    const stack = container.getItem(i);
+    if (!stack || stack.typeId !== itemId) {
+      continue;
+    }
+
+    total += stack.amount;
+  }
+
+  return total;
+}
+
+function removeItemsFromContainer(container, itemId, amountToRemove) {
+  if (!container || !itemId || amountToRemove <= 0) {
+    return false;
+  }
+
+  let remaining = amountToRemove;
+
+  for (let i = 0; i < container.size && remaining > 0; i++) {
+    const stack = container.getItem(i);
+    if (!stack || stack.typeId !== itemId) {
+      continue;
+    }
+
+    if (stack.amount <= remaining) {
+      remaining -= stack.amount;
+      container.setItem(i, undefined);
+      continue;
+    }
+
+    const updated = stack.clone();
+    updated.amount = stack.amount - remaining;
+    container.setItem(i, updated);
+    remaining = 0;
+  }
+
+  return remaining === 0;
+}
+
+function tryCraftStaffFallback(player, event) {
+  if (!isEntityValid(player) || !event) {
+    return false;
+  }
+
+  const usedItem = event.itemStack;
+  if (!usedItem || usedItem.typeId !== STAFF_FALLBACK_INGREDIENT_ITEM_ID) {
+    return false;
+  }
+
+  const block = event.block;
+  if (!block || block.typeId !== CRAFTING_TABLE_BLOCK_ID) {
+    return false;
+  }
+
+  const container = getInventoryContainer(player);
+  if (!container) {
+    return false;
+  }
+
+  const stickCount = countItemInContainer(container, STAFF_FALLBACK_INGREDIENT_ITEM_ID);
+  if (stickCount < STAFF_FALLBACK_INGREDIENT_COUNT) {
+    showActionBar(player, "Need 2 sticks to craft Wooden Staff.");
+    return true;
+  }
+
+  if (!safePlayerCommand(player, `give @s ${MORPH_CONFIG.item.staffItemId} 1`)) {
+    showActionBar(player, "Craft failed: unable to grant Wooden Staff.");
+    return true;
+  }
+
+  if (!removeItemsFromContainer(container, STAFF_FALLBACK_INGREDIENT_ITEM_ID, STAFF_FALLBACK_INGREDIENT_COUNT)) {
+    showActionBar(player, "Craft failed: unable to consume sticks.");
+    return true;
+  }
+
+  showActionBar(player, "Crafted Wooden Staff.");
+  playMorphSound(player, MORPH_CONFIG.visuals.morphStopSoundId);
+  return true;
+}
+
 function isAllowedMorphTarget(target) {
   if (!isEntityValid(target)) {
     return false;
   }
 
   if (isPlayerEntity(target)) {
+    return false;
+  }
+
+  if (!isLivingEntity(target)) {
     return false;
   }
 
@@ -232,6 +360,119 @@ function safePlayerCommand(player, command) {
   }
 }
 
+function tryAddResistance(player, effectId) {
+  try {
+    player.addEffect(effectId, MORPH_CONFIG.timing.invisibilityDurationTicks, {
+      amplifier: 255,
+      showParticles: false
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function tryRemoveResistance(player, effectId) {
+  try {
+    player.removeEffect(effectId);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function tryAddWaterBreathing(player, effectId) {
+  try {
+    player.addEffect(effectId, MORPH_CONFIG.timing.invisibilityDurationTicks, {
+      amplifier: 0,
+      showParticles: false
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function tryRemoveWaterBreathing(player, effectId) {
+  try {
+    player.removeEffect(effectId);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function tryAddEffect(entity, effectId, durationTicks, amplifier) {
+  try {
+    entity.addEffect(effectId, durationTicks, {
+      amplifier,
+      showParticles: false
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function tryExtinguishEntity(entity) {
+  if (!isEntityValid(entity)) {
+    return false;
+  }
+
+  try {
+    if (typeof entity.extinguishFire === "function") {
+      entity.extinguishFire(true);
+      return true;
+    }
+  } catch (e) {
+    // Continue to command fallback.
+  }
+
+  return false;
+}
+
+function applyProxySafetyEffects(proxy) {
+  if (!isEntityValid(proxy)) {
+    return;
+  }
+
+  // Keep proxy as a visual shell, not a combat actor.
+  for (const effectId of ["minecraft:resistance", "resistance"]) {
+    if (tryAddEffect(proxy, effectId, MORPH_CONFIG.timing.invisibilityDurationTicks, 255)) {
+      break;
+    }
+  }
+
+  for (const effectId of ["minecraft:weakness", "weakness"]) {
+    if (tryAddEffect(proxy, effectId, MORPH_CONFIG.timing.invisibilityDurationTicks, 255)) {
+      break;
+    }
+  }
+
+  // Reduce movement/pathing so hostile mobs do not chase or repeatedly attack.
+  for (const effectId of ["minecraft:slowness", "slowness"]) {
+    if (tryAddEffect(proxy, effectId, MORPH_CONFIG.timing.invisibilityDurationTicks, 255)) {
+      break;
+    }
+  }
+
+  // Remove target acquisition where supported.
+  for (const effectId of ["minecraft:blindness", "blindness"]) {
+    if (tryAddEffect(proxy, effectId, MORPH_CONFIG.timing.invisibilityDurationTicks, 1)) {
+      break;
+    }
+  }
+
+  // Prevent daylight burning on undead proxy types (zombie/skeleton variants).
+  for (const effectId of ["minecraft:fire_resistance", "fire_resistance"]) {
+    if (tryAddEffect(proxy, effectId, MORPH_CONFIG.timing.invisibilityDurationTicks, 0)) {
+      break;
+    }
+  }
+
+  tryExtinguishEntity(proxy);
+}
+
 function setPlayerInvisible(player, shouldBeInvisible) {
   if (!isEntityValid(player)) {
     return;
@@ -260,6 +501,65 @@ function setPlayerInvisible(player, shouldBeInvisible) {
 
   if (!removed) {
     safePlayerCommand(player, "effect @s clear invisibility");
+  }
+}
+
+function setPlayerMorphProtection(player, shouldProtect) {
+  if (!isEntityValid(player)) {
+    return;
+  }
+
+  if (shouldProtect) {
+    for (const effectId of RESISTANCE_EFFECT_IDS) {
+      if (tryAddResistance(player, effectId)) {
+        return;
+      }
+    }
+
+    // Command fallback for runtimes with partial addEffect support.
+    const seconds = Math.max(1, Math.floor(MORPH_CONFIG.timing.invisibilityDurationTicks / 20));
+    safePlayerCommand(player, `effect @s resistance ${seconds} 255 true`);
+    return;
+  }
+
+  let removed = false;
+  for (const effectId of RESISTANCE_EFFECT_IDS) {
+    if (tryRemoveResistance(player, effectId)) {
+      removed = true;
+    }
+  }
+
+  if (!removed) {
+    safePlayerCommand(player, "effect @s clear resistance");
+  }
+}
+
+function setPlayerMorphWaterBreathing(player, shouldApply) {
+  if (!isEntityValid(player)) {
+    return;
+  }
+
+  if (shouldApply) {
+    for (const effectId of WATER_BREATHING_EFFECT_IDS) {
+      if (tryAddWaterBreathing(player, effectId)) {
+        return;
+      }
+    }
+
+    const seconds = Math.max(1, Math.floor(MORPH_CONFIG.timing.invisibilityDurationTicks / 20));
+    safePlayerCommand(player, `effect @s water_breathing ${seconds} 0 true`);
+    return;
+  }
+
+  let removed = false;
+  for (const effectId of WATER_BREATHING_EFFECT_IDS) {
+    if (tryRemoveWaterBreathing(player, effectId)) {
+      removed = true;
+    }
+  }
+
+  if (!removed) {
+    safePlayerCommand(player, "effect @s clear water_breathing");
   }
 }
 
@@ -490,7 +790,7 @@ function removeProxyByState(state) {
   removeProxyEntity(proxy);
 }
 
-function createMorphState(player, proxy, mobTypeId, ownerTag, nowTick) {
+function createMorphState(player, proxy, mobTypeId, proxyTypeId, ownerTag, nowTick) {
   const mobConfig = getMobMorphConfig(mobTypeId) || { abilityProfile: "none" };
 
   return {
@@ -498,6 +798,7 @@ function createMorphState(player, proxy, mobTypeId, ownerTag, nowTick) {
     proxyId: proxy.id,
     ownerTag,
     mobTypeId,
+    proxyTypeId,
     abilityProfile: mobConfig.abilityProfile,
     dimensionId: normalizeDimensionId(player.dimension.id),
     startedTick: nowTick,
@@ -515,6 +816,7 @@ function startMorph(player, targetEntity) {
   }
 
   const mobTypeId = targetEntity.typeId;
+  const proxyTypeId = getProxyEntityTypeForMob(mobTypeId);
   const now = getCurrentTick();
 
   if (hasMorphState(player.id)) {
@@ -526,16 +828,30 @@ function startMorph(player, targetEntity) {
     return false;
   }
 
+  // Apply player invisibility before proxy spawn to avoid hostile targeting lock-on.
+  setPlayerInvisible(player, true);
+  setPlayerMorphProtection(player, true);
+  setPlayerMorphWaterBreathing(player, true);
+  setPlayerMorphVisualTag(player, true);
+
   let proxy;
   try {
     // Bedrock proxy approach: player is hidden and a mob entity is synced as visual shell.
-    proxy = player.dimension.spawnEntity(mobTypeId, player.location);
+    proxy = player.dimension.spawnEntity(proxyTypeId, player.location);
   } catch (e) {
+    setPlayerInvisible(player, false);
+    setPlayerMorphProtection(player, false);
+    setPlayerMorphWaterBreathing(player, false);
+    setPlayerMorphVisualTag(player, false);
     showActionBar(player, "Morph failed: unable to spawn proxy.");
     return false;
   }
 
   if (!isEntityValid(proxy)) {
+    setPlayerInvisible(player, false);
+    setPlayerMorphProtection(player, false);
+    setPlayerMorphWaterBreathing(player, false);
+    setPlayerMorphVisualTag(player, false);
     showActionBar(player, "Morph failed: invalid proxy entity.");
     return false;
   }
@@ -543,17 +859,10 @@ function startMorph(player, targetEntity) {
   const ownerTag = getProxyOwnerTag(player.id);
   addTagIfAvailable(proxy, MORPH_CONFIG.proxy.tag);
   addTagIfAvailable(proxy, ownerTag);
+  clearEntityNameTag(proxy);
+  applyProxySafetyEffects(proxy);
 
-  try {
-    proxy.nameTag = player.name;
-  } catch (e) {
-    // Optional cosmetic.
-  }
-
-  setPlayerInvisible(player, true);
-  setPlayerMorphVisualTag(player, true);
-
-  const state = createMorphState(player, proxy, mobTypeId, ownerTag, now);
+  const state = createMorphState(player, proxy, mobTypeId, proxyTypeId, ownerTag, now);
   setMorphState(player.id, state);
   applyShortCooldown(player.id);
 
@@ -580,6 +889,8 @@ function stopMorph(player, reason = "manual") {
   removeLingeringProxies(player, state);
   clearAllPlayerState(player.id);
   setPlayerInvisible(player, false);
+  setPlayerMorphProtection(player, false);
+  setPlayerMorphWaterBreathing(player, false);
   setPlayerMorphVisualTag(player, false);
   applyShortCooldown(player.id);
 
@@ -615,6 +926,8 @@ function cleanupMorphState(playerId, reason = "cleanup") {
   }
 
   setPlayerInvisible(player, false);
+  setPlayerMorphProtection(player, false);
+  setPlayerMorphWaterBreathing(player, false);
   setPlayerMorphVisualTag(player, false);
 
   if (reason === "death") {
@@ -635,8 +948,9 @@ function recreateProxyInPlayerDimension(state, player) {
   removeProxyByState(state);
 
   let replacement;
+  const replacementTypeId = state.proxyTypeId || state.mobTypeId;
   try {
-    replacement = player.dimension.spawnEntity(state.mobTypeId, player.location);
+    replacement = player.dimension.spawnEntity(replacementTypeId, player.location);
   } catch (e) {
     cleanupMorphState(state.playerId, "proxy_invalid");
     return undefined;
@@ -649,12 +963,8 @@ function recreateProxyInPlayerDimension(state, player) {
 
   addTagIfAvailable(replacement, MORPH_CONFIG.proxy.tag);
   addTagIfAvailable(replacement, state.ownerTag);
-
-  try {
-    replacement.nameTag = player.name;
-  } catch (e) {
-    // Optional cosmetic.
-  }
+  clearEntityNameTag(replacement);
+  applyProxySafetyEffects(replacement);
 
   state.proxyId = replacement.id;
   state.dimensionId = normalizeDimensionId(player.dimension.id);
@@ -722,7 +1032,7 @@ function handleMorphAttemptFromEntity(player, target) {
   setLastEntityInteractTick(player.id, now);
 
   if (hasMorphState(player.id)) {
-    showActionBar(player, "Already morphed. Use staff again to revert.");
+    stopMorph(player, "manual");
     return;
   }
 
@@ -772,7 +1082,7 @@ function handleStaffUse(player, itemStack) {
 
   const lookTarget = getLookTargetEntity(player);
   if (!lookTarget) {
-    showActionBar(player, "Use staff on a whitelisted mob.");
+    showActionBar(player, "Use staff on a morphable mob.");
     return;
   }
 
@@ -802,9 +1112,12 @@ function syncAllMorphs() {
 
     syncMorphProxy(player, state, proxy);
     applyMobAbilityTick(state, player, proxy);
+    applyProxySafetyEffects(proxy);
 
     if (now - state.lastInvisibilityRefreshTick >= MORPH_CONFIG.timing.invisibilityRefreshTicks) {
       setPlayerInvisible(player, true);
+      setPlayerMorphProtection(player, true);
+      setPlayerMorphWaterBreathing(player, true);
       state.lastInvisibilityRefreshTick = now;
       setMorphState(playerId, state);
     }
@@ -849,6 +1162,54 @@ function onItemUse(event) {
   handleStaffUse(player, event.itemStack);
 }
 
+function onItemUseOn(event) {
+  const player = event ? event.source : undefined;
+  if (!isPlayerEntity(player)) {
+    return;
+  }
+
+  if (!isHoldingMorphStaff(player, event.itemStack)) {
+    tryCraftStaffFallback(player, event);
+    return;
+  }
+
+  handleStaffUse(player, event.itemStack);
+}
+
+function onEntityHitEntity(event) {
+  const player = event ? event.damagingEntity || event.entity : undefined;
+  const target = event ? event.hitEntity || event.target : undefined;
+
+  if (!isPlayerEntity(player) || !isEntityValid(target)) {
+    return;
+  }
+
+  if (!isHoldingMorphStaff(player)) {
+    return;
+  }
+
+  handleMorphAttemptFromEntity(player, target);
+}
+
+function onBeforeEntityHitEntity(event) {
+  const damagingEntity = event ? event.damagingEntity || event.entity : undefined;
+  if (!isEntityValid(damagingEntity)) {
+    return;
+  }
+
+  const ownerState = findStateByProxyId(damagingEntity.id);
+  if (!ownerState) {
+    return;
+  }
+
+  try {
+    // Proxy is visual-only. Cancel all melee hit registration from proxy entities.
+    event.cancel = true;
+  } catch (e) {
+    // Some runtimes expose non-cancellable event shapes.
+  }
+}
+
 function onEntityDie(event) {
   const deadEntity = event ? event.deadEntity : undefined;
   if (!isEntityValid(deadEntity)) {
@@ -865,6 +1226,26 @@ function onEntityDie(event) {
   const ownerState = findStateByProxyId(deadEntity.id);
   if (ownerState) {
     cleanupMorphState(ownerState.playerId, "proxy_invalid");
+  }
+}
+
+function onBeforeEntityHurt(event) {
+  const hurtEntity = event ? event.hurtEntity || event.entity : undefined;
+  if (!isEntityValid(hurtEntity)) {
+    return;
+  }
+
+  const isMorphedPlayer = isPlayerEntity(hurtEntity) && !!getMorphState(hurtEntity.id);
+  const isActiveProxy = !!findStateByProxyId(hurtEntity.id);
+  if (!isMorphedPlayer && !isActiveProxy) {
+    return;
+  }
+
+  try {
+    // While morphed, protect both hidden player and proxy shell from incoming damage.
+    event.cancel = true;
+  } catch (e) {
+    // Some runtimes expose a non-cancellable hurt event shape.
   }
 }
 
@@ -889,7 +1270,12 @@ function onPlayerSpawn(event) {
   setPlayerMorphVisualTag(player, !!state);
   if (state) {
     setPlayerInvisible(player, true);
+    setPlayerMorphProtection(player, true);
+    setPlayerMorphWaterBreathing(player, true);
   } else {
+    setPlayerInvisible(player, false);
+    setPlayerMorphProtection(player, false);
+    setPlayerMorphWaterBreathing(player, false);
     removeLingeringProxies(player, undefined);
   }
 
@@ -899,7 +1285,7 @@ function onPlayerSpawn(event) {
     return;
   }
 
-  showActionBar(player, "Staff ready. Use on a whitelisted mob.");
+  showActionBar(player, "Staff ready. Use on a morphable mob.");
 }
 
 function cleanupOrphanedProxiesOnScriptStart() {
@@ -911,15 +1297,15 @@ function cleanupOrphanedProxiesOnScriptStart() {
   });
 }
 
-const afterEvents = world.afterEvents || {};
 const beforeEvents = world.beforeEvents || {};
-
-// VERSION NOTE: beforeEvents signals are not present on every Bedrock build.
+const afterEvents = world.afterEvents || {};
+safeSubscribe(beforeEvents.entityHurt, onBeforeEntityHurt);
+safeSubscribe(beforeEvents.entityHitEntity, onBeforeEntityHitEntity);
+// Do not mutate gameplay state from beforeEvents; some Bedrock runtimes treat them as read-only.
 safeSubscribe(afterEvents.playerInteractWithEntity, onPlayerInteractWithEntity);
-safeSubscribe(beforeEvents.playerInteractWithEntity, onPlayerInteractWithEntity);
-
 safeSubscribe(afterEvents.itemUse, onItemUse);
-safeSubscribe(beforeEvents.itemUse, onItemUse);
+safeSubscribe(afterEvents.itemUseOn, onItemUseOn);
+safeSubscribe(afterEvents.entityHitEntity, onEntityHitEntity);
 
 safeSubscribe(afterEvents.entityDie, onEntityDie);
 safeSubscribe(afterEvents.playerLeave, onPlayerLeave);
