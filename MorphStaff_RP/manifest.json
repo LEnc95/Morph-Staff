@@ -1,17 +1,18 @@
-﻿{
+{
   "format_version": 2,
   "header": {
-    "name": "Morph Staff RP v1.1.0",
-    "description": "Client visuals for Morph Staff. Hides held items while morphed.",
-    "uuid": "b2134db8-2a7c-4fd4-a0f8-7e6a5d52c1b9",
-    "version": [1, 1, 0],
+    "name": "Morph Staff RP v1.1.19",
+    "description": "Client visuals for Morph Staff. Stability-safe RP baseline.",
+    "uuid": "58be59bc-d3db-426b-9963-be437fca4786",
+    "version": [1, 1, 19],
     "min_engine_version": [1, 21, 0]
   },
   "modules": [
     {
       "type": "resources",
-      "uuid": "95fdd820-a5f8-4d21-9dcb-3ef34f8b6d2a",
-      "version": [1, 1, 0]
+      "uuid": "979ae5b9-2b88-4c01-a32c-a7ecaaf683a3",
+      "version": [1, 1, 19]
     }
   ]
 }
+

@@ -1,26 +1,26 @@
-﻿{
+{
   "format_version": 2,
   "header": {
-    "name": "Morph Staff BP v1.1.0",
+    "name": "Morph Staff BP v1.1.19",
     "description": "Morph Staff MVP behavior pack using Bedrock Script API proxy morphing.",
-    "uuid": "c8ad6d2b-f4d1-4a7f-9d11-3e8a7f03f7ec",
-    "version": [1, 1, 0],
+    "uuid": "28016981-62b0-45c5-8811-0a3a8626b5b5",
+    "version": [1, 1, 19],
     "min_engine_version": [1, 21, 0]
   },
   "modules": [
     {
       "description": "Morph Staff behavior data",
       "type": "data",
-      "uuid": "4b4db8a1-9c2e-4c3e-b2f4-5d6f75d8f8b2",
-      "version": [1, 1, 0]
+      "uuid": "1add1683-7332-42ba-ab9e-599ad51e3d72",
+      "version": [1, 1, 19]
     },
     {
       "description": "Morph Staff script runtime",
       "type": "script",
       "language": "javascript",
       "entry": "scripts/main.js",
-      "uuid": "c1dd2b5f-38f1-4b74-9f34-9a90fa6be0dd",
-      "version": [1, 1, 0]
+      "uuid": "4c1b0ca3-a2b6-4925-a5f8-36a6cb5e522a",
+      "version": [1, 1, 19]
     }
   ],
   "dependencies": [
@@ -30,3 +30,4 @@
     }
   ]
 }
+
