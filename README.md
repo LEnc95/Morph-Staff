@@ -16,7 +16,7 @@ This repository is licensed under **PolyForm Noncommercial License 1.0.0**.
 
 ## Release Notes
 
-### v1.1.0 (BP) + v1.1.0 (RP)
+### v1.1.1 (BP) + v1.1.1 (RP)
 
 - Hardened runtime log discovery for gate execution (stable + preview paths, including `minecraftpe/NonAssertErrorLog.txt`).
 - Added deterministic runtime log path override support:
@@ -29,6 +29,10 @@ This repository is licensed under **PolyForm Noncommercial License 1.0.0**.
 - Added cache reset helper for stale Bedrock pack index state:
   - `scripts/reset-stable-pack-cache.ps1`
 - Rotated BP/RP UUIDs to force a clean pack identity and avoid stale cache collisions.
+- Added optional stale-pack cleanup switches for local troubleshooting:
+  - `-RemoveKnownTestPacks`
+  - `-RemoveMorphStaffPacks`
+  - `-ForceCloseMinecraft`
 
 ## Why This Pack Exists
 
@@ -44,26 +48,44 @@ Bedrock add-ons cannot safely replace the player model at engine level for arbit
 - `manifest.json`: Behavior Pack + Script API wiring.
 - `items/wooden_staff.item.json`: `morphstaff:wooden_staff` item definition.
 - `recipes/wooden_staff.recipe.json`: Crafting recipe for the staff.
-- `scripts/config.js`: Item id, mob whitelist, cooldown, feature toggles.
+- `entities/*.entity.json`: Passive hostile proxy shells used to keep morph visuals while removing hostile combat loops.
+- `scripts/config.js`: Item id, morph target policy, denied list, cooldown, feature toggles.
 - `scripts/morphState.js`: Active morph map + cooldown/interaction state.
 - `scripts/effects.js`: Action bar, sound, and particle wrappers.
 - `scripts/main.js`: Event subscriptions, morph lifecycle, sync, cleanup.
 - `MorphStaff_RP/manifest.json`: Resource pack manifest.
 - `MorphStaff_RP/render_controllers/player.render_controllers.json`: Player render override that hides `rightItem`/`leftItem` when the player is invisible.
 
-## Whitelist (MVP)
+## Morph Target Policy
 
-Current morph targets:
+Current policy in `scripts/config.js`:
 
-- `minecraft:zombie`
-- `minecraft:skeleton`
-- `minecraft:cow`
-- `minecraft:pig`
-- `minecraft:sheep`
-- `minecraft:creeper`
-- `minecraft:villager`
+- Allow all living non-player entities by default (`allowAllLivingMobs: true`).
+- Deny explicit unsafe/unsupported types:
+  - `minecraft:player`
+  - `minecraft:armor_stand`
+  - `minecraft:agent`
+  - `minecraft:npc`
+  - `minecraft:ender_dragon`
+  - `minecraft:wither`
 
-Extend by adding entity ids in `scripts/config.js` (`MORPHABLE_ENTITY_TYPES`).
+Why these are denied:
+
+- `player`: PvP/self-target and state ownership conflicts.
+- `armor_stand`/`agent`/`npc`: utility or technical entities, not normal mob gameplay targets.
+- `ender_dragon`/`wither`: boss entities with unstable or destructive behavior in proxy-sync mode.
+
+Hostile proxy note:
+
+- These morph targets remain allowed but are routed to passive proxy shells:
+  - `minecraft:zombie` -> `morphstaff:zombie_proxy`
+  - `minecraft:husk` -> `morphstaff:husk_proxy`
+  - `minecraft:drowned` -> `morphstaff:drowned_proxy`
+  - `minecraft:skeleton` -> `morphstaff:skeleton_proxy`
+  - `minecraft:stray` -> `morphstaff:stray_proxy`
+  - `minecraft:creeper` -> `morphstaff:creeper_proxy`
+
+To customize behavior, edit `morphTargets.deniedEntityTypes` in `scripts/config.js`.
 
 ## Installation (Windows)
 
@@ -97,11 +119,33 @@ For Preview builds, use:
 powershell -ExecutionPolicy Bypass -File scripts/deploy-prod.ps1 -PreviewBuild
 ```
 
+## One-Command Import (Recommended)
+
+Builds a fresh `.mcaddon`, deploys BP/RP folders, and triggers import into Minecraft:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/import-local.ps1
+```
+
+Note: this command now requires Minecraft to already be closed. It will not force-kill the game unless you pass `-ForceCloseMinecraft`.
+
+Optional launch target after import:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/import-local.ps1 -LaunchStable
+```
+
+If you intentionally want the script to close Minecraft first:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/import-local.ps1 -ForceCloseMinecraft
+```
+
 ## Quick Test Steps
 
 1. Get the item:
    - `/give @s morphstaff:wooden_staff`
-2. Spawn test mobs from the whitelist, then right-click/use staff on one.
+2. Spawn test mobs, then right-click/use staff on any allowed living mob.
 3. Confirm morph starts (action bar + sound/particle + proxy follows player).
    - Held items are hidden while morphed (no floating item in hand).
 4. Right-click/use staff in air to revert.
@@ -161,7 +205,7 @@ Manual test instructions live in:
 ## Gameplay Rules Implemented
 
 - Staff is the only trigger item.
-- Use on valid whitelisted mob to morph.
+- Use on valid morphable mob to morph.
 - Use in air while morphed to revert.
 - One active morph per player; no stacking.
 - Cooldown: 2.0 seconds after morph/unmorph.
@@ -174,3 +218,4 @@ Manual test instructions live in:
   - `@minecraft/server`: `1.13.0`
 - RP item-hide behavior is tied to `query.is_invisible` for the player render controller, which matches morph state but also applies to other invisibility states.
 - Sound/particle ids vary between versions; effect helpers fail safely if unavailable.
+- While morphed, the hidden real player receives water breathing refresh to prevent drowning bubble damage/camera shake (for example, drowned morph underwater).

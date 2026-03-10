@@ -17,14 +17,15 @@ Use this matrix with `scripts/test/run-all.ps1`.
 /give @s morphstaff:wooden_staff
 ```
 
-Whitelisted mobs for this pack:
-- `minecraft:zombie`
-- `minecraft:skeleton`
-- `minecraft:cow`
-- `minecraft:pig`
-- `minecraft:sheep`
-- `minecraft:creeper`
-- `minecraft:villager`
+Morph target policy for this pack:
+- Allow all living non-player entities by default.
+- Denied entity ids:
+  - `minecraft:player`
+  - `minecraft:armor_stand`
+  - `minecraft:agent`
+  - `minecraft:npc`
+  - `minecraft:ender_dragon`
+  - `minecraft:wither`
 
 ## Scenario Matrix
 
@@ -52,17 +53,21 @@ Pass criteria:
 - Give command succeeds.
 - Staff appears in inventory and can be selected.
 
-### S03 - Morph start on whitelisted mobs
+### S03 - Morph start on allowed mobs
 
 Commands:
 ```mcfunction
 /summon zombie ~2 ~ ~
-/summon skeleton ~3 ~ ~
-/summon cow ~4 ~ ~
-/summon pig ~5 ~ ~
-/summon sheep ~6 ~ ~
-/summon creeper ~7 ~ ~
-/summon villager ~8 ~ ~
+/summon husk ~3 ~ ~
+/summon drowned ~4 ~ ~
+/summon skeleton ~5 ~ ~
+/summon stray ~6 ~ ~
+/summon cow ~7 ~ ~
+/summon pig ~8 ~ ~
+/summon sheep ~9 ~ ~
+/summon creeper ~10 ~ ~
+/summon villager ~11 ~ ~
+/summon chicken ~12 ~ ~
 ```
 
 Actions:
@@ -97,11 +102,11 @@ Pass criteria:
 
 Commands:
 ```mcfunction
-/summon chicken ~2 ~ ~
+/summon armor_stand ~2 ~ ~
 ```
 
 Actions:
-- Try staff use on `minecraft:chicken`.
+- Try staff use on `minecraft:armor_stand`.
 
 Pass criteria:
 - Morph does not start.
@@ -161,7 +166,7 @@ Pass criteria:
 ### S11 - Repeatability stress (10 cycles)
 
 Actions:
-- Perform 10 consecutive morph -> revert cycles on a whitelisted mob.
+- Perform 10 consecutive morph -> revert cycles on an allowed mob.
 
 Pass criteria:
 - No cycle fails.

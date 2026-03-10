@@ -7,7 +7,7 @@
   "scenarios": [
     { "id": "S01", "name": "Pack load and world entry", "status": "PENDING", "notes": "" },
     { "id": "S02", "name": "Staff grant", "status": "PENDING", "notes": "" },
-    { "id": "S03", "name": "Morph start on whitelisted mobs", "status": "PENDING", "notes": "" },
+    { "id": "S03", "name": "Morph start on allowed mobs", "status": "PENDING", "notes": "" },
     { "id": "S04", "name": "Manual revert", "status": "PENDING", "notes": "" },
     { "id": "S05", "name": "Cooldown behavior", "status": "PENDING", "notes": "" },
     { "id": "S06", "name": "Invalid target rejection", "status": "PENDING", "notes": "" },
