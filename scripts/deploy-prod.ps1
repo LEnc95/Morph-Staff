@@ -5,7 +5,9 @@ param(
   [Alias("PreviewBuild")]
   [switch]$PreviewOnly,
   [switch]$StableOnly,
-  [switch]$SkipDevelopment
+  [switch]$SkipDevelopment,
+  [switch]$SkipRoamingDeploy,
+  [switch]$CleanRoamingKnownTestPacks
 )
 
 $ErrorActionPreference = "Stop"
@@ -111,6 +113,27 @@ foreach ($target in $targets) {
 
 if ($successCount -eq 0) {
   throw "No deploy targets were available."
+}
+
+if (-not $SkipRoamingDeploy) {
+  $roamingDeployScript = Join-Path $PSScriptRoot "deploy-roaming.ps1"
+  if (Test-Path -Path $roamingDeployScript -PathType Leaf) {
+    $roamingArgs = @(
+      "-ExecutionPolicy", "Bypass",
+      "-File", $roamingDeployScript,
+      "-RootDir", $RootDir,
+      "-BehaviorPackName", $BehaviorPackName,
+      "-ResourcePackName", $ResourcePackName
+    )
+
+    if ($CleanRoamingKnownTestPacks) {
+      $roamingArgs += "-CleanKnownTestPacks"
+    }
+
+    & powershell @roamingArgs
+  } else {
+    Write-Warning "Roaming deploy script not found: $roamingDeployScript"
+  }
 }
 
 if (-not $PreviewOnly -and -not $StableOnly) {

@@ -1,9 +1,24 @@
-# Morph Staff (BP + RP)
+# Morph Staff (Bedrock BP + RP)
 
-A Minecraft Bedrock add-on split into:
+`Morph Staff` is a Minecraft Bedrock add-on with:
 
-- `Morph Staff BP` (behavior pack): gameplay logic + Script API morph system.
-- `Morph Staff RP` (resource pack): client render override that hides held hand items while morphed.
+- `Morph Staff BP`: behavior pack gameplay + Script API runtime.
+- `Morph Staff RP`: resource pack visuals (including held-item hiding while morphed).
+
+## Current Release
+
+- **BP:** `Morph Staff BP v1.1.21`
+- **RP:** `Morph Staff RP v1.1.21`
+- **Target:** Bedrock Stable/Preview 1.21.x (Windows)
+
+### What Changed In v1.1.21
+
+- Added RP client entity definitions for hostile proxy IDs so proxy morphs render correctly.
+- Added Roaming-path deployment support to handle Bedrock installs that read from:
+  - `C:\Users\<you>\AppData\Roaming\Minecraft Bedrock\...`
+- Added stale-pack cleanup + redeploy workflow for duplicated old pack folders.
+- Updated deploy pipeline so `deploy-prod` also syncs Roaming roots by default.
+- Added stronger preflight checks to block BP proxy IDs that are missing RP client entities.
 
 ## License
 
@@ -14,54 +29,68 @@ This repository is licensed under **PolyForm Noncommercial License 1.0.0**.
 - See `LICENSE` for full terms.
 - See `NOTICE` for required notice lines that must be preserved when sharing copies.
 
-## Release Notes
+## Why This Exists
 
-### v1.1.1 (BP) + v1.1.1 (RP)
+Bedrock does not provide a clean, fully supported engine-level player model swap for arbitrary vanilla mobs. This add-on uses a proxy illusion pattern:
 
-- Hardened runtime log discovery for gate execution (stable + preview paths, including `minecraftpe/NonAssertErrorLog.txt`).
-- Added deterministic runtime log path override support:
-  - `scripts/test/run-all.ps1 -LogPathOverride <path>`
-  - `MORPHSTAFF_BEDROCK_LOG_PATHS` environment variable (semicolon-delimited paths)
-- Strengthened manual QA evidence requirements:
-  - `tester`, `minecraftVersion`, and `worldName` are required in manual results.
-  - `S10`, `S11`, and `S12` require non-empty notes when marked `PASS`.
-- Kept RP held-item hiding behavior tied to player invisibility state.
-- Added cache reset helper for stale Bedrock pack index state:
-  - `scripts/reset-stable-pack-cache.ps1`
-- Rotated BP/RP UUIDs to force a clean pack identity and avoid stale cache collisions.
-- Added optional stale-pack cleanup switches for local troubleshooting:
-  - `-RemoveKnownTestPacks`
-  - `-RemoveMorphStaffPacks`
-  - `-ForceCloseMinecraft`
+1. Hide the real player.
+2. Spawn a mob proxy.
+3. Sync proxy location/rotation to player every tick.
+4. Revert and clean up on manual toggle, death, proxy invalidation, leave/rejoin, and other failure paths.
 
-## Why This Pack Exists
+## Quick Start (Recommended)
 
-Bedrock add-ons cannot safely replace the player model at engine level for arbitrary mobs in a clean/stable way. This pack uses a practical proxy morph pattern:
+Use one command to build, deploy, import, and optionally launch:
 
-- Hide the real player with invisibility.
-- Spawn a mob proxy.
-- Sync the proxy to player position/rotation every tick.
-- Revert and clean up on manual toggle, death, proxy loss, or world leave.
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/import-local.ps1 -ForceCloseMinecraft -LaunchStable
+```
 
-## File Overview
+This will:
 
-- `manifest.json`: Behavior Pack + Script API wiring.
-- `items/wooden_staff.item.json`: `morphstaff:wooden_staff` item definition.
-- `recipes/wooden_staff.recipe.json`: Crafting recipe for the staff.
-- `entities/*.entity.json`: Passive hostile proxy shells used to keep morph visuals while removing hostile combat loops.
-- `scripts/config.js`: Item id, morph target policy, denied list, cooldown, feature toggles.
-- `scripts/morphState.js`: Active morph map + cooldown/interaction state.
-- `scripts/effects.js`: Action bar, sound, and particle wrappers.
-- `scripts/main.js`: Event subscriptions, morph lifecycle, sync, cleanup.
-- `MorphStaff_RP/manifest.json`: Resource pack manifest.
-- `MorphStaff_RP/render_controllers/player.render_controllers.json`: Player render override that hides `rightItem`/`leftItem` when the player is invisible.
+- Build fresh `.mcpack/.mcaddon` artifacts.
+- Deploy BP/RP folders.
+- Trigger Bedrock import.
+- Launch Stable Bedrock.
+
+## Deployment Commands
+
+### Standard deploy (LocalState + Roaming roots)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/deploy-prod.ps1 -StableOnly
+```
+
+### Force cleanup of known stale test folders in Roaming roots
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/deploy-prod.ps1 -StableOnly -CleanRoamingKnownTestPacks
+```
+
+### Roaming-only deploy (advanced)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/deploy-roaming.ps1 -CleanKnownTestPacks
+```
+
+## Important Windows Storage Note
+
+Some Bedrock installs read pack data from Roaming locations (for example `AppData\Roaming\Minecraft Bedrock\Users\...\games\com.mojang`) instead of only UWP LocalState paths.
+
+If you keep seeing old packs like `v1.0.7`, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/deploy-prod.ps1 -StableOnly -CleanRoamingKnownTestPacks
+```
+
+Then fully close Bedrock and relaunch.
 
 ## Morph Target Policy
 
-Current policy in `scripts/config.js`:
+Configured in `scripts/config.js`:
 
-- Allow all living non-player entities by default (`allowAllLivingMobs: true`).
-- Deny explicit unsafe/unsupported types:
+- `allowAllLivingMobs: true` (all living non-player mobs allowed by default).
+- Explicit deny list:
   - `minecraft:player`
   - `minecraft:armor_stand`
   - `minecraft:agent`
@@ -69,153 +98,62 @@ Current policy in `scripts/config.js`:
   - `minecraft:ender_dragon`
   - `minecraft:wither`
 
-Why these are denied:
+Hostile types routed to passive proxy shells:
 
-- `player`: PvP/self-target and state ownership conflicts.
-- `armor_stand`/`agent`/`npc`: utility or technical entities, not normal mob gameplay targets.
-- `ender_dragon`/`wither`: boss entities with unstable or destructive behavior in proxy-sync mode.
+- `minecraft:zombie` -> `morphstaff:zombie_proxy`
+- `minecraft:husk` -> `morphstaff:husk_proxy`
+- `minecraft:drowned` -> `morphstaff:drowned_proxy`
+- `minecraft:skeleton` -> `morphstaff:skeleton_proxy`
+- `minecraft:stray` -> `morphstaff:stray_proxy`
+- `minecraft:creeper` -> `morphstaff:creeper_proxy`
 
-Hostile proxy note:
+## Gameplay Rules
 
-- These morph targets remain allowed but are routed to passive proxy shells:
-  - `minecraft:zombie` -> `morphstaff:zombie_proxy`
-  - `minecraft:husk` -> `morphstaff:husk_proxy`
-  - `minecraft:drowned` -> `morphstaff:drowned_proxy`
-  - `minecraft:skeleton` -> `morphstaff:skeleton_proxy`
-  - `minecraft:stray` -> `morphstaff:stray_proxy`
-  - `minecraft:creeper` -> `morphstaff:creeper_proxy`
+- Staff item: `morphstaff:wooden_staff`
+- Use on valid target to morph.
+- Use again while morphed to revert.
+- One active morph per player.
+- Cooldown enforced after morph/unmorph.
+- Cleanup on player death, proxy invalidation, leave/rejoin, and dimension transfer.
+- Held items hidden while morphed via RP player render controller.
 
-To customize behavior, edit `morphTargets.deniedEntityTypes` in `scripts/config.js`.
+## File Overview
 
-## Installation (Windows)
+- `manifest.json`: BP manifest + script module wiring.
+- `items/wooden_staff.item.json`: staff item definition.
+- `recipes/*.json`: staff crafting recipes.
+- `entities/*.entity.json`: BP proxy entity shells.
+- `scripts/main.js`: morph lifecycle + event subscriptions.
+- `scripts/config.js`: target policy, cooldowns, proxy mapping.
+- `scripts/morphState.js`: per-player state and cooldown tracking.
+- `scripts/effects.js`: action bar/sound/particle wrappers.
+- `scripts/deploy-prod.ps1`: deploy to LocalState + Roaming roots.
+- `scripts/deploy-roaming.ps1`: Roaming-root cleanup/deploy helper.
+- `MorphStaff_RP/manifest.json`: RP manifest.
+- `MorphStaff_RP/entity/*.entity.json`: RP client entity defs for proxies.
+- `MorphStaff_RP/render_controllers/player.render_controllers.json`: hide held items when invisible.
 
-1. Copy this repo (behavior pack root) into:
-   - `%LOCALAPPDATA%\Packages\Microsoft.MinecraftUWP_8wekyb3d8bbwe\LocalState\games\com.mojang\behavior_packs\MorphStaff_BP`
-2. Copy `MorphStaff_RP` into:
-   - `%LOCALAPPDATA%\Packages\Microsoft.MinecraftUWP_8wekyb3d8bbwe\LocalState\games\com.mojang\resource_packs\MorphStaff_RP`
-3. Start Minecraft Bedrock (stable or preview with Script API support).
-4. Create/edit a world and enable:
-   - `Behavior Packs` -> `Morph Staff BP`
-   - `Resource Packs` -> `Morph Staff RP`
-   - `Experimental` toggles needed for your version (for scripting/API).
-5. Enter the world.
+## Test & Release Gate
 
-## Deploy To Local Production Folder
-
-Run:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/deploy-prod.ps1
-```
-
-This copies:
-
-- BP files to `%LOCALAPPDATA%\\Packages\\Microsoft.MinecraftUWP_8wekyb3d8bbwe\\LocalState\\games\\com.mojang\\behavior_packs\\MorphStaff_BP`
-- RP files to `%LOCALAPPDATA%\\Packages\\Microsoft.MinecraftUWP_8wekyb3d8bbwe\\LocalState\\games\\com.mojang\\resource_packs\\MorphStaff_RP`
-
-For Preview builds, use:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/deploy-prod.ps1 -PreviewBuild
-```
-
-## One-Command Import (Recommended)
-
-Builds a fresh `.mcaddon`, deploys BP/RP folders, and triggers import into Minecraft:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/import-local.ps1
-```
-
-Note: this command now requires Minecraft to already be closed. It will not force-kill the game unless you pass `-ForceCloseMinecraft`.
-
-Optional launch target after import:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/import-local.ps1 -LaunchStable
-```
-
-If you intentionally want the script to close Minecraft first:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/import-local.ps1 -ForceCloseMinecraft
-```
-
-## Quick Test Steps
-
-1. Get the item:
-   - `/give @s morphstaff:wooden_staff`
-2. Spawn test mobs, then right-click/use staff on any allowed living mob.
-3. Confirm morph starts (action bar + sound/particle + proxy follows player).
-   - Held items are hidden while morphed (no floating item in hand).
-4. Right-click/use staff in air to revert.
-   - Held items become visible again after revert.
-5. Verify cleanup paths:
-   - Kill player while morphed.
-   - Kill proxy while morphed.
-   - Leave world while morphed.
-
-## Automated Test Harness (Strict Gate)
-
-Run the end-to-end test pipeline:
+Run full gate:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/test/run-all.ps1
 ```
 
-Optional log override examples:
+Manual matrix:
 
-```powershell
-$env:MORPHSTAFF_BEDROCK_LOG_PATHS = "$env:LOCALAPPDATA\\Packages\\Microsoft.MinecraftUWP_8wekyb3d8bbwe\\LocalState\\games\\com.mojang\\minecraftpe"
-powershell -ExecutionPolicy Bypass -File scripts/test/run-all.ps1
-```
+- `tests/bedrock-manual-matrix.md`
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/test/run-all.ps1 -LogPathOverride "C:\\Path\\To\\NonAssertErrorLog.txt"
-```
-
-Initialize manual results metadata for a run:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/test/init-manual-results.ps1 -RunDir "artifacts/test-runs/<timestamp>" -MinecraftVersion "1.21.x" -WorldName "YourWorld"
-```
-
-Find the latest passing gate artifact:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/test/find-latest-pass.ps1
-```
-
-What it does:
-
-- Runs static preflight checks.
-- Captures Bedrock runtime logs before/after gameplay validation.
-- Evaluates a strict release gate from preflight + runtime + manual scenario results.
-
-Artifacts are written to:
+Artifacts:
 
 - `artifacts/test-runs/<timestamp>/preflight-report.md`
 - `artifacts/test-runs/<timestamp>/runtime-report.md`
 - `artifacts/test-runs/<timestamp>/gate-summary.md`
 
-Manual test instructions live in:
-
-- `tests/bedrock-manual-matrix.md`
-
-## Gameplay Rules Implemented
-
-- Staff is the only trigger item.
-- Use on valid morphable mob to morph.
-- Use in air while morphed to revert.
-- One active morph per player; no stacking.
-- Cooldown: 2.0 seconds after morph/unmorph.
-- Invalid target or unsupported proxy attempts fail safely.
-
 ## Compatibility Notes
 
-- Targeted for stable-first setup:
-  - `min_engine_version`: `[1, 21, 0]`
-  - `@minecraft/server`: `1.13.0`
-- RP item-hide behavior is tied to `query.is_invisible` for the player render controller, which matches morph state but also applies to other invisibility states.
-- Sound/particle ids vary between versions; effect helpers fail safely if unavailable.
-- While morphed, the hidden real player receives water breathing refresh to prevent drowning bubble damage/camera shake (for example, drowned morph underwater).
+- `min_engine_version`: `[1, 21, 0]`
+- `@minecraft/server`: `1.13.0`
+- RP item-hide behavior is tied to `query.is_invisible` and will affect any invisibility state.
+- API/event availability can vary slightly across Bedrock builds; runtime code uses defensive fallbacks where possible.

@@ -1,17 +1,17 @@
 {
   "format_version": 2,
   "header": {
-    "name": "Morph Staff RP v1.1.19",
+    "name": "Morph Staff RP v1.1.21",
     "description": "Client visuals for Morph Staff. Stability-safe RP baseline.",
-    "uuid": "58be59bc-d3db-426b-9963-be437fca4786",
-    "version": [1, 1, 19],
+    "uuid": "a5f0f4d8-6765-44d6-bff5-37852f9f6512",
+    "version": [1, 1, 21],
     "min_engine_version": [1, 21, 0]
   },
   "modules": [
     {
       "type": "resources",
-      "uuid": "979ae5b9-2b88-4c01-a32c-a7ecaaf683a3",
-      "version": [1, 1, 19]
+      "uuid": "0c6c1556-7302-4f4c-b42f-d55a23aa2f0a",
+      "version": [1, 1, 21]
     }
   ]
 }

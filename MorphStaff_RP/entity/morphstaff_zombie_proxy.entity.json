@@ -1,0 +1,22 @@
+{
+  "format_version": "1.8.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "morphstaff:zombie_proxy",
+      "min_engine_version": "1.8.0",
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "default": "textures/entity/zombie/zombie"
+      },
+      "geometry": {
+        "default": "geometry.zombie"
+      },
+      "render_controllers": [
+        "controller.render.default"
+      ],
+      "enable_attachables": false
+    }
+  }
+}

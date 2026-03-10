@@ -207,6 +207,14 @@ $proxyEntityPaths = @(
   (Join-Path $RootDir "entities/morphstaff_stray_proxy.entity.json"),
   (Join-Path $RootDir "entities/morphstaff_creeper_proxy.entity.json")
 )
+$rpProxyEntityPaths = @(
+  (Join-Path $RootDir "MorphStaff_RP/entity/morphstaff_zombie_proxy.entity.json"),
+  (Join-Path $RootDir "MorphStaff_RP/entity/morphstaff_husk_proxy.entity.json"),
+  (Join-Path $RootDir "MorphStaff_RP/entity/morphstaff_drowned_proxy.entity.json"),
+  (Join-Path $RootDir "MorphStaff_RP/entity/morphstaff_skeleton_proxy.entity.json"),
+  (Join-Path $RootDir "MorphStaff_RP/entity/morphstaff_stray_proxy.entity.json"),
+  (Join-Path $RootDir "MorphStaff_RP/entity/morphstaff_creeper_proxy.entity.json")
+)
 $configPath = Join-Path $RootDir "scripts/config.js"
 $readmePath = Join-Path $RootDir "README.md"
 $entryScriptPath = Join-Path $RootDir "scripts/main.js"
@@ -218,7 +226,7 @@ $requiredFiles = @(
   $itemPath,
   $recipeShapelessPath,
   $recipeShapedPath
-) + $proxyEntityPaths + @(
+) + $proxyEntityPaths + $rpProxyEntityPaths + @(
   $configPath,
   $readmePath,
   $entryScriptPath,
@@ -238,6 +246,10 @@ if ($result.blockers.Count -eq 0) {
   foreach ($proxyPath in $proxyEntityPaths) {
     $label = "entities/$([System.IO.Path]::GetFileName($proxyPath))"
     Test-JsonFile -Path $proxyPath -Result $result -Label $label
+  }
+  foreach ($rpProxyPath in $rpProxyEntityPaths) {
+    $label = "MorphStaff_RP/entity/$([System.IO.Path]::GetFileName($rpProxyPath))"
+    Test-JsonFile -Path $rpProxyPath -Result $result -Label $label
   }
   Test-JsonFile -Path $rpManifestPath -Result $result -Label "MorphStaff_RP/manifest.json"
   Test-JsonFile -Path $rpRenderControllerPath -Result $result -Label "MorphStaff_RP/render_controllers/player.render_controllers.json"
@@ -317,6 +329,32 @@ if ($result.blockers.Count -eq 0) {
   }
 
   Add-Check -Result $result -Name "Proxy override entity targets exist" -Passed ($missingOverrideTargets.Count -eq 0) -Details (Select-Detail -Condition ($missingOverrideTargets.Count -eq 0) -TrueText "All proxyEntityOverrides targets resolve to entity files." -FalseText "Missing proxy entity definitions for: $($missingOverrideTargets -join ', ').")
+
+  $rpEntityIdToPath = @{}
+  foreach ($rpProxyPath in $rpProxyEntityPaths) {
+    if (-not (Test-Path -Path $rpProxyPath -PathType Leaf)) {
+      continue
+    }
+
+    try {
+      $rpEntityJson = Read-JsonFile -Path $rpProxyPath
+      $rpIdentifier = [string]$rpEntityJson.'minecraft:client_entity'.description.identifier
+      if (-not [string]::IsNullOrWhiteSpace($rpIdentifier)) {
+        $rpEntityIdToPath[$rpIdentifier] = $rpProxyPath
+      }
+    } catch {
+      # JSON parse failure already captured by Test-JsonFile.
+    }
+  }
+
+  $missingRpOverrideTargets = @()
+  foreach ($targetId in $overrideTargets | Select-Object -Unique) {
+    if (-not $rpEntityIdToPath.ContainsKey($targetId)) {
+      $missingRpOverrideTargets += $targetId
+    }
+  }
+
+  Add-Check -Result $result -Name "Proxy override RP client entities exist" -Passed ($missingRpOverrideTargets.Count -eq 0) -Details (Select-Detail -Condition ($missingRpOverrideTargets.Count -eq 0) -TrueText "All proxyEntityOverrides targets have RP client entity definitions." -FalseText "Missing RP client entity definitions for: $($missingRpOverrideTargets -join ', ').")
 
   Test-ImportGraph -EntryFile $entryScriptPath -Result $result
 
